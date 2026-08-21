@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.1
+// @version      0.4.2
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: arrow keys for the image carousel, E to enlarge in a modal, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -56,7 +56,22 @@
   const btnText = (b) => (b.textContent || '').trim();
   const followBtn = () =>
     Array.from(document.querySelectorAll('button.follow-button')).find(visible);
-  const searchInput = () => document.querySelector('input.search-input');
+  // The header renders two stacked copies of the search box at the same
+  // coordinates; the DOM-first one is a transparent ghost (opacity 1e-05),
+  // so querySelector-first focused an invisible input and `/` looked dead.
+  const searchInput = () => {
+    const inputs = document.querySelectorAll('input.search-input');
+    for (const el of inputs) {
+      const cs = getComputedStyle(el);
+      if (
+        cs.display !== 'none' &&
+        cs.visibility !== 'hidden' &&
+        parseFloat(cs.opacity) > 0.5
+      )
+        return el;
+    }
+    return inputs[0] || null;
+  };
   const sendBtn = () =>
     Array.from(document.querySelectorAll('button')).find(
       (b) => (btnText(b) === 'Send' || btnText(b) === '发送') && visible(b)

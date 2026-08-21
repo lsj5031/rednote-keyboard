@@ -56,6 +56,10 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 
 ## Changelog
 
+### 0.4.2
+
+- Fixed: `/` now focuses the search box you can actually see. The header renders two stacked copies of `input.search-input` at identical coordinates and the DOM-first one is a transparent ghost (`opacity: 0.00001`) — the bare `querySelector` focused that invisible copy, so the caret never appeared and the shortcut looked dead. The hook now skips transparent/hidden copies.
+
 ### 0.4.1
 
 - Fixed: `L` now likes the note itself, not a comment — comments carry their own `.like-wrapper` buttons which can sit earlier in the DOM than the note's action bar, and the bare `querySelector` grabbed whichever came first. The like hook is now scoped to the engage bar's container (with a comment-excluding fallback); verified against a live page with 3 `.like-wrapper` elements.
