@@ -1,15 +1,18 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
-// @namespace    https://github.com/local/rednote-keyboard
-// @version      0.3.0
+// @namespace    https://github.com/lsj5031/rednote-keyboard
+// @version      0.4.0
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: arrow keys for the image carousel, E to enlarge in a modal, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
-// @author       you
+// @author       lsj5031
+// @homepageURL  https://github.com/lsj5031/rednote-keyboard
 // @match        https://www.rednote.com/*
 // @match        https://www.xiaohongshu.com/*
 // @match        https://rednote.com/*
 // @match        https://xiaohongshu.com/*
 // @run-at       document-idle
 // @grant        none
+// @license      MIT
+// @noframes
 // ==/UserScript==
 
 (function () {
@@ -35,24 +38,32 @@
   const collectEl = () => document.querySelector('.collect-wrapper');
   const chatEl = () => document.querySelector('.chat-wrapper');
   const commentBox = () => document.querySelector('#content-textarea');
+  // offsetParent is null for position:fixed elements, so check client rects
+  const visible = (el) => !!el && el.getClientRects().length > 0;
+  const btnText = (b) => (b.textContent || '').trim();
   const followBtn = () =>
-    Array.from(document.querySelectorAll('button.follow-button')).find(
-      (b) => b.offsetParent !== null
-    );
+    Array.from(document.querySelectorAll('button.follow-button')).find(visible);
   const searchInput = () => document.querySelector('input.search-input');
   const sendBtn = () =>
     Array.from(document.querySelectorAll('button')).find(
-      (b) => (b.textContent || '').trim() === 'Send' && b.offsetParent !== null
+      (b) => (btnText(b) === 'Send' || btnText(b) === '发送') && visible(b)
     );
 
   const slideCount = () => {
     const sw = swiper();
-    return sw ? sw.slides.length - (sw.loopedSlides || 0) * 2 : 0;
+    if (!sw || !sw.slides.length) return 0;
+    // Legacy Swiper clones ~loopedSlides copies at each end in loop mode;
+    // Swiper >=9 doesn't clone at all. Dedupe by slide index to cover both.
+    const idx = sw.slides.map((s) => s.getAttribute('data-swiper-slide-index'));
+    return idx.some((v) => v !== null) ? new Set(idx).size : sw.slides.length;
   };
   const currentSlideEl = () => {
     const sw = swiper();
     if (!sw) return null;
-    return sw.slides[sw.realIndex] || document.querySelector('.swiper-slide-active');
+    // .swiper-slide-active is clone-correct in every Swiper version
+    return (
+      sw.el.querySelector('.swiper-slide-active') || sw.slides[sw.activeIndex] || null
+    );
   };
 
   const isEditable = (t) => {
@@ -75,6 +86,8 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'rnk-toast';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
       el.style.cssText =
         'position:fixed;right:24px;bottom:24px;z-index:2147483647;background:rgba(20,20,20,.92);' +
         'color:#fff;padding:10px 16px;border-radius:8px;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
@@ -130,6 +143,7 @@
   let lbZoom = 1;
   let lbPan = { x: 0, y: 0 };
   let lbDragging = false;
+  let lbDragMoved = false; // suppress the click a pan-drag ends with
   let lbDragStart = { x: 0, y: 0, px: 0, py: 0 };
 
   const MEDIA_CSS =
@@ -176,20 +190,36 @@
     if (!swiper()) return;
     if (lb) return closeLightbox();
 
+    // Pause the page's own players so audio doesn't double up; resume on close.
+    const pausedVideos = Array.from(document.querySelectorAll('.swiper video')).filter(
+      (v) => !v.paused
+    );
+    pausedVideos.forEach((v) => v.pause());
+
     const ov = document.createElement('div');
     ov.style.cssText =
       'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.93);' +
       'display:flex;align-items:center;justify-content:center;' +
       'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-label', '图片放大视图');
+    // Pan works from anywhere (image included) — when zoomed in, the image
+    // covers the viewport, so requiring e.target === ov made panning impossible.
     ov.addEventListener('pointerdown', (e) => {
-      if (e.target === ov && lbZoom > 1) {
-        lbDragging = true;
-        lbDragStart = { x: e.clientX, y: e.clientY, px: lbPan.x, py: lbPan.y };
-        ov.style.cursor = 'grabbing';
-      }
+      if (lbZoom <= 1 || e.target.closest('button')) return;
+      lbDragging = true;
+      lbDragMoved = false;
+      lbDragStart = { x: e.clientX, y: e.clientY, px: lbPan.x, py: lbPan.y };
+      ov.style.cursor = 'grabbing';
     });
     ov.addEventListener('click', (e) => {
-      if (e.target === ov) closeLightbox();
+      if (e.target !== ov) return; // buttons/media handle their own clicks
+      if (lbDragMoved) {
+        lbDragMoved = false; // a pan-drag ending on the background isn't a close-click
+        return;
+      }
+      closeLightbox();
     });
     ov.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -204,6 +234,7 @@
     closeBtn.style.cssText =
       'position:fixed;top:16px;right:20px;z-index:2;width:40px;height:40px;border-radius:50%;border:1px solid #555;' +
       'background:rgba(30,30,30,.8);color:#fff;font-size:16px;cursor:pointer';
+    closeBtn.setAttribute('aria-label', '关闭');
     closeBtn.addEventListener('click', () => closeLightbox());
 
     const prevBtn = document.createElement('button');
@@ -211,6 +242,7 @@
     const nextBtn = document.createElement('button');
     nextBtn.textContent = '›';
     for (const [b, dir] of [[prevBtn, -1], [nextBtn, 1]]) {
+      b.setAttribute('aria-label', dir < 0 ? '上一张' : '下一张');
       b.style.cssText =
         'position:fixed;top:50%;transform:translateY(-50%);z-index:2;width:48px;height:72px;border:none;' +
         'background:rgba(30,30,30,.6);color:#fff;font-size:34px;cursor:pointer;border-radius:8px';
@@ -247,6 +279,7 @@
       [zoomReset, () => { lbZoom = 1; lbPan = { x: 0, y: 0 }; applyTransform(); }],
     ]) {
       b.style.cssText = zoomBtnCss;
+      b.setAttribute('aria-label', b === zoomIn ? '放大' : b === zoomOut ? '缩小' : '重置缩放');
       b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
     }
     zoomBar.append(zoomOut, zoomLabel, zoomIn, zoomReset);
@@ -259,7 +292,7 @@
     ov.append(view, closeBtn, prevBtn, nextBtn, counter, zoomBar, hint);
     document.body.appendChild(ov);
 
-    lb = { ov, view, media: null, counter, zoomLabel };
+    lb = { ov, view, media: null, counter, zoomLabel, pausedVideos };
     syncLightbox();
   }
 
@@ -267,16 +300,25 @@
     if (!lb) return;
     const slide = currentSlideEl();
     const video = slide ? slide.querySelector('video') : null;
-    if (lb.media) lb.media.remove();
+    if (lb.media) {
+      if (lb.media.tagName === 'VIDEO') lb.media.pause();
+      lb.media.remove();
+    }
 
     if (video) {
       const v = document.createElement('video');
       v.src = video.currentSrc || video.src || '';
       v.controls = true;
-      v.autoplay = true;
+      v.playsInline = true;
       v.style.cssText = MEDIA_CSS.replace('object-fit:contain', '');
       lb.view.appendChild(v);
       lb.media = v;
+      // Opening via a keypress counts as user activation, so unmuted playback
+      // is usually allowed; fall back to muted if the browser still blocks it.
+      v.play().catch(() => {
+        v.muted = true;
+        v.play().catch(() => {});
+      });
     } else {
       const img = document.createElement('img');
       img.style.cssText = MEDIA_CSS;
@@ -292,14 +334,18 @@
   function closeLightbox() {
     if (!lb) return;
     lb.ov.remove();
+    (lb.pausedVideos || []).forEach((v) => v.play().catch(() => {}));
     lb = null;
   }
 
   // drag-to-pan (window-level so it keeps tracking outside the overlay)
   window.addEventListener('pointermove', (e) => {
     if (!lbDragging || !lb) return;
-    lbPan.x = lbDragStart.px + (e.clientX - lbDragStart.x);
-    lbPan.y = lbDragStart.py + (e.clientY - lbDragStart.y);
+    const dx = e.clientX - lbDragStart.x;
+    const dy = e.clientY - lbDragStart.y;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) lbDragMoved = true;
+    lbPan.x = lbDragStart.px + dx;
+    lbPan.y = lbDragStart.py + dy;
     clampPan();
     applyTransform();
   });
@@ -337,6 +383,8 @@
     if (!box) {
       box = document.createElement('div');
       box.id = 'rnk-help';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-label', '键盘快捷键帮助');
       box.style.cssText =
         'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;' +
         'background:#1e1e1e;color:#eee;border:1px solid #444;border-radius:12px;padding:20px 24px;' +
@@ -364,14 +412,24 @@
   /* ------------------------------------------------------------------ *
    * Auto-dismiss nag modals (ad-blocker reminder etc.)
    * ------------------------------------------------------------------ */
+  const GOT_IT_LABELS = ['Got it', '知道了', '我知道了'];
   function dismissAlerts() {
     if (!isNoteDetail()) return; // only touch the page on note detail
     const gotIt = Array.from(document.querySelectorAll('button')).find(
-      (b) => (b.textContent || '').trim() === 'Got it' && b.offsetParent !== null
+      (b) => GOT_IT_LABELS.includes(btnText(b)) && visible(b)
     );
     if (gotIt) gotIt.click();
   }
-  new MutationObserver(() => dismissAlerts()).observe(document.body, {
+  // The observer fires on every mutation and scanning all buttons adds up on
+  // a busy page — run at most twice a second.
+  let lastDismiss = 0;
+  function dismissAlertsThrottled() {
+    const now = Date.now();
+    if (now - lastDismiss < 500) return;
+    lastDismiss = now;
+    dismissAlerts();
+  }
+  new MutationObserver(dismissAlertsThrottled).observe(document.body, {
     childList: true,
     subtree: true,
   });
@@ -386,41 +444,53 @@
     (e) => {
       if (!isNoteDetail()) return; // keybindings are note-detail-only
 
+      // IME composition (pinyin etc.): never intercept while composing
+      if (e.isComposing || e.keyCode === 229) return;
+
+      // Holding a key must not machine-gun toggles (like/unlike, lightbox…).
+      // Arrows stay repeatable for flipping through images.
+      if (e.repeat && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+      const handled = () => {
+        e.preventDefault();
+        e.stopPropagation(); // keep the page's own handlers from double-firing
+      };
+
       // Lightbox takes priority when open
       if (lb) {
         switch (e.key) {
           case 'Escape':
           case 'e':
           case 'E':
-            e.preventDefault();
+            handled();
             closeLightbox();
             break;
           case 'ArrowLeft':
           case 'a':
           case 'A':
-            e.preventDefault();
+            handled();
             moveSlide(-1);
             syncLightbox();
             break;
           case 'ArrowRight':
           case 'd':
           case 'D':
-            e.preventDefault();
+            handled();
             moveSlide(1);
             syncLightbox();
             break;
           case '+':
           case '=':
-            e.preventDefault();
+            handled();
             lbZoomBy(0.5);
             break;
           case '-':
           case '_':
-            e.preventDefault();
+            handled();
             lbZoomBy(-0.5);
             break;
           case '0':
-            e.preventDefault();
+            handled();
             lbZoom = 1;
             lbPan = { x: 0, y: 0 };
             applyTransform();
@@ -433,8 +503,9 @@
       if (e.ctrlKey || e.metaKey || e.altKey) {
         if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') {
           const box = commentBox();
-          if (box && (document.activeElement === box || isEditable(e.target))) {
-            e.preventDefault();
+          // only when the comment box itself has focus — not any editable
+          if (box && document.activeElement === box) {
+            handled();
             if (!click(sendBtn(), '已发送 💬')) toast('请先点击评论区');
           }
         }
@@ -445,16 +516,24 @@
 
       // Escape always works, even while typing
       if (e.key === 'Escape') {
-        if (helpVisible) return toggleHelp();
-        const box = commentBox();
-        if (box && document.activeElement === box) {
-          box.blur();
+        if (helpVisible) {
+          handled();
+          toggleHelp();
+          return;
+        }
+        if (editing) {
+          // blur the input (comment box, search…) without touching page buttons
+          handled();
+          e.target.blur();
           return;
         }
         const close = Array.from(document.querySelectorAll('button.close-icon')).find(
-          (b) => b.offsetParent !== null
+          visible
         );
-        if (click(close)) return;
+        if (click(close)) {
+          handled();
+          return;
+        }
         dismissAlerts();
         return;
       }
@@ -465,61 +544,64 @@
         case 'ArrowLeft':
         case 'a':
         case 'A':
-          e.preventDefault();
+          handled();
           moveSlide(-1);
           break;
         case 'ArrowRight':
         case 'd':
         case 'D':
-          e.preventDefault();
+          handled();
           moveSlide(1);
           break;
         case 'e':
         case 'E':
-          e.preventDefault();
+          handled();
           openLightbox();
           break;
         case 'l':
         case 'L':
-          e.preventDefault();
+          handled();
           click(likeEl(), '❤️ 已点赞 / 取消');
           break;
         case 's':
         case 'S':
-          e.preventDefault();
+          handled();
           click(collectEl(), '⭐ 已收藏 / 取消');
           break;
         case 'c':
-        case 'C':
-          e.preventDefault();
-          if (!commentBox()) click(chatEl());
-          else {
-            commentBox().focus();
-            commentBox().scrollIntoView({ block: 'center', behavior: 'smooth' });
+        case 'C': {
+          handled();
+          const box = commentBox();
+          if (!box) {
+            click(chatEl());
+          } else {
+            box.focus();
+            box.scrollIntoView({ block: 'center', behavior: 'smooth' });
             toast('💬 输入评论…');
           }
           break;
+        }
         case 'f':
         case 'F':
-          e.preventDefault();
+          handled();
           click(followBtn(), '👤 关注 / 取消');
           break;
         case '/':
-          e.preventDefault();
+          handled();
           if (searchInput()) {
             searchInput().focus();
             toast('🔍 搜索');
           }
           break;
         case '?':
-          e.preventDefault();
+          handled();
           toggleHelp();
           break;
         default:
           if (/^[1-9]$/.test(e.key)) {
             const total = slideCount();
             if (total >= +e.key) {
-              e.preventDefault();
+              handled();
               gotoSlide(+e.key);
             }
           }
