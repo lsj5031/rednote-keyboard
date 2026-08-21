@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.0
+// @version      0.4.1
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: arrow keys for the image carousel, E to enlarge in a modal, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -34,7 +34,20 @@
     const el = swiperEl();
     return el && el.swiper ? el.swiper : null;
   };
-  const likeEl = () => document.querySelector('.like-wrapper');
+  // Comments carry their own .like-wrapper under each .comment-item, and they
+  // can appear EARLIER in the DOM than the note's engage bar — a bare
+  // querySelector liked a comment instead of the note. Scope to the engage
+  // bar's container first, then fall back to the first like button that isn't
+  // inside a comment.
+  const likeEl = () => {
+    const scoped = document.querySelector('.interact-container .like-wrapper');
+    if (scoped) return scoped;
+    return (
+      Array.from(document.querySelectorAll('.like-wrapper')).find(
+        (el) => !el.closest('[id^="comment-"], .comment-item, .comment-inner-container')
+      ) || null
+    );
+  };
   const collectEl = () => document.querySelector('.collect-wrapper');
   const chatEl = () => document.querySelector('.chat-wrapper');
   const commentBox = () => document.querySelector('#content-textarea');
