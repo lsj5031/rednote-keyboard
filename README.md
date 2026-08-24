@@ -4,6 +4,8 @@ Keyboard shortcuts for **rednote.com / xiaohongshu.com note detail pages** — a
 
 Does nothing on the home feed, search, or profile pages — shortcuts are gated to note-detail URLs (`/explore/<id>`, `/discovery/item/<id>`, `/note/<id>`), so browsing the feed with your hands on the keyboard won't accidentally like anything.
 
+> *Unofficial userscript. Not affiliated with Xiaohongshu / RedNote.*
+
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey).
