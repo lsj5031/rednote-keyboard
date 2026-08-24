@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.2
+// @version      0.4.3
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: arrow keys for the image carousel, E to enlarge in a modal, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -173,6 +173,7 @@
   let lbDragging = false;
   let lbDragMoved = false; // suppress the click a pan-drag ends with
   let lbDragStart = { x: 0, y: 0, px: 0, py: 0 };
+  let lbPendingG = 0; // timestamp of a waiting "g" (for the gg chord)
 
   const MEDIA_CSS =
     'max-width:94vw;max-height:92vh;object-fit:contain;transition:transform .15s ease;' +
@@ -313,7 +314,7 @@
     zoomBar.append(zoomOut, zoomLabel, zoomIn, zoomReset);
 
     const hint = document.createElement('div');
-    hint.textContent = '← → 切换 · 滚轮/＋− 缩放 · 拖动平移 · Esc/E 关闭';
+    hint.textContent = '← → / h l 切换 · j k 平移 · gg/G 首末图 · 滚轮缩放 · q/Esc 关闭';
     hint.style.cssText =
       'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:2;color:#999;font-size:12px';
 
@@ -399,11 +400,14 @@
     ['?', '显示 / 隐藏本帮助'],
   ];
   const LIGHTBOX_SHORTCUTS = [
-    ['← / →  or  A / D', '切换图片'],
+    ['← / →  or  h / l', '切换图片'],
+    ['j / k', '放大后上下平移'],
+    ['gg / G', '跳到第一张 / 最后一张'],
+    ['1 – 9', '跳到第 N 张图片'],
     ['滚轮 / + / −', '缩放（最多 8 倍）'],
     ['0 或 ⤾', '重置缩放'],
     ['拖动', '平移（放大后）'],
-    ['Esc / E / ✕', '关闭放大视图'],
+    ['Esc / E / q / ✕', '关闭放大视图'],
   ];
   let helpVisible = false;
   function toggleHelp() {
@@ -476,8 +480,18 @@
       if (e.isComposing || e.keyCode === 229) return;
 
       // Holding a key must not machine-gun toggles (like/unlike, lightbox…).
-      // Arrows stay repeatable for flipping through images.
-      if (e.repeat && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      // Arrows stay repeatable for flipping through images; with the lightbox
+      // open, hjkl are movement keys too — but ONLY there (held L must still
+      // never spam like/unlike on the note page).
+      if (
+        e.repeat &&
+        !(
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight' ||
+          (lb && ['h', 'l', 'j', 'k'].includes(e.key))
+        )
+      )
+        return;
 
       const handled = () => {
         e.preventDefault();
@@ -490,7 +504,9 @@
           case 'Escape':
           case 'e':
           case 'E':
+          case 'q':
             handled();
+            lbPendingG = 0;
             closeLightbox();
             break;
           case 'ArrowLeft':
@@ -507,6 +523,50 @@
             moveSlide(1);
             syncLightbox();
             break;
+          case 'h':
+            handled();
+            lbPendingG = 0;
+            moveSlide(-1);
+            syncLightbox();
+            break;
+          case 'l':
+            handled();
+            lbPendingG = 0;
+            moveSlide(1);
+            syncLightbox();
+            break;
+          case 'j':
+          case 'k': {
+            handled();
+            lbPendingG = 0;
+            if (lbZoom > 1) {
+              const step = (lb.view.offsetHeight || 600) * 0.1;
+              lbPan.y += e.key === 'j' ? step : -step;
+              clampPan();
+              applyTransform();
+            }
+            break;
+          }
+          case 'g': {
+            handled();
+            const now = performance.now();
+            if (now - lbPendingG < 500) {
+              lbPendingG = 0;
+              gotoSlide(1); // gg → first image
+              syncLightbox();
+            } else {
+              lbPendingG = now; // wait for the second g
+            }
+            break;
+          }
+          case 'G': {
+            handled();
+            lbPendingG = 0;
+            const total = slideCount();
+            if (total) gotoSlide(total);
+            syncLightbox();
+            break;
+          }
           case '+':
           case '=':
             handled();
@@ -523,6 +583,17 @@
             lbPan = { x: 0, y: 0 };
             applyTransform();
             break;
+          default:
+            // digits jump to the Nth image (same as on the page behind)
+            if (/^[1-9]$/.test(e.key)) {
+              const total = slideCount();
+              if (total >= +e.key) {
+                handled();
+                lbPendingG = 0;
+                gotoSlide(+e.key);
+                syncLightbox();
+              }
+            }
         }
         return;
       }

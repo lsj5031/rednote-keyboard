@@ -35,13 +35,16 @@ Only active on note detail pages; typing in an input is always left alone.
 
 | Key / input | Action |
 |---|---|
-| `←` / `→` or `A` / `D` | Switch images |
+| `←` / `→`, `a` / `d`, or `h` / `l` | Switch images (hold to repeat) |
+| `j` / `k` | Pan down / up while zoomed |
+| `gg` / `Shift+G` | First image / last image |
+| `1` – `9` | Jump to the Nth image |
 | Mouse wheel / `+` / `−` | Zoom (up to 8×) |
 | `0` or ⤾ button | Reset zoom |
 | Drag | Pan while zoomed (works from anywhere, including the image itself) |
-| `Esc` / `E` / ✕ / click background | Close |
+| `Esc` / `E` / `q` / ✕ / click background | Close |
 
-Held-down keys don't repeat (except arrows), IME composition is never intercepted, and modifier combos pass through to the browser.
+Held-down keys don't repeat (except arrows anywhere, and `h j k l` while the lightbox is open), IME composition is never intercepted, and modifier combos pass through to the browser.
 
 ## Verified against the live site
 
@@ -55,6 +58,12 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.3
+
+- Added: vim-style keys inside the lightbox — `h`/`l` switch images (hold-to-repeat), `j`/`k` pan down/up while zoomed, `gg` jumps to the first image, `Shift+G` to the last, and `q` closes. Digits `1`–`9` now jump to the Nth image inside the lightbox too (previously unused there).
+- Note: while the lightbox is open, `l` means "next image", not like — matching how `a`/`d` already behave in there. Held `hjkl` repeat like the arrows, but only with the lightbox open; held `L` on the note page still never machine-guns likes.
+- Added: `tests/keymap-harness.mjs`, a Node harness that loads the real userscript against a DOM stub and drives its actual keydown handler through every chord and regression guard (18 checks).
 
 ### 0.4.2
 
