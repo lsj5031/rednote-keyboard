@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.3
+// @version      0.4.4
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: arrow keys for the image carousel, E to enlarge in a modal, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -215,6 +215,26 @@
     applyTransform();
   }
 
+  // Wheel = prev/next image; hold Ctrl/⌘ to zoom instead. Zooming one 0.2
+  // step per wheel EVENT would machine-gun on trackpads (a single flick
+  // fires dozens of small deltas), so accumulate deltas and emit one step
+  // per notched detent's worth (~100px; line-mode wheels count as a detent
+  // per event).
+  let lbWheelAcc = 0;
+  function lbWheel(e) {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      lbWheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+      while (Math.abs(lbWheelAcc) >= 100) {
+        lbZoomBy(lbWheelAcc > 0 ? -0.2 : 0.2); // scroll down = zoom out
+        lbWheelAcc -= lbWheelAcc > 0 ? 100 : -100;
+      }
+    } else {
+      moveSlide(e.deltaY < 0 ? -1 : 1);
+      syncLightbox();
+    }
+  }
+
   function openLightbox() {
     if (!swiper()) return;
     if (lb) return closeLightbox();
@@ -250,10 +270,7 @@
       }
       closeLightbox();
     });
-    ov.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      lbZoomBy(e.deltaY < 0 ? 0.2 : -0.2);
-    }, { passive: false });
+    ov.addEventListener('wheel', lbWheel, { passive: false });
 
     const view = document.createElement('div');
     view.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden';
@@ -314,7 +331,7 @@
     zoomBar.append(zoomOut, zoomLabel, zoomIn, zoomReset);
 
     const hint = document.createElement('div');
-    hint.textContent = '← → / h l 切换 · j k 平移 · gg/G 首末图 · 滚轮缩放 · q/Esc 关闭';
+    hint.textContent = '← → / h l 切换 · 滚轮切换图片 · Ctrl+滚轮缩放 · j k 平移 · gg/G 首末图 · q/Esc 关闭';
     hint.style.cssText =
       'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:2;color:#999;font-size:12px';
 
@@ -404,7 +421,8 @@
     ['j / k', '放大后上下平移'],
     ['gg / G', '跳到第一张 / 最后一张'],
     ['1 – 9', '跳到第 N 张图片'],
-    ['滚轮 / + / −', '缩放（最多 8 倍）'],
+    ['滚轮', '上一张 / 下一张'],
+    ['Ctrl + 滚轮 / + / −', '缩放（最多 8 倍）'],
     ['0 或 ⤾', '重置缩放'],
     ['拖动', '平移（放大后）'],
     ['Esc / E / q / ✕', '关闭放大视图'],

@@ -38,15 +38,18 @@ Only active on note detail pages; typing in an input is always left alone.
 | Key / input | Action |
 |---|---|
 | `←` / `→`, `a` / `d`, or `h` / `l` | Switch images (hold to repeat) |
+| Mouse wheel | Previous / next image |
 | `j` / `k` | Pan down / up while zoomed |
 | `gg` / `Shift+G` | First image / last image |
 | `1` – `9` | Jump to the Nth image |
-| Mouse wheel / `+` / `−` | Zoom (up to 8×) |
+| `Ctrl`/`⌘` + wheel or `+` / `−` | Zoom (up to 8×) |
 | `0` or ⤾ button | Reset zoom |
 | Drag | Pan while zoomed (works from anywhere, including the image itself) |
 | `Esc` / `E` / `q` / ✕ / click background | Close |
 
 Held-down keys don't repeat (except arrows anywhere, and `h j k l` while the lightbox is open), IME composition is never intercepted, and modifier combos pass through to the browser.
+
+Inside the lightbox, the mouse wheel flips to the previous/next image (scroll up = previous, scroll down = next) — hold `Ctrl` / `⌘` while scrolling to zoom instead.
 
 ## Verified against the live site
 
@@ -60,6 +63,10 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.4
+
+- Changed: inside the lightbox, the mouse wheel now navigates to the previous/next image instead of zooming — the same action as the on-page carousel. Hold `Ctrl` / `⌘` while scrolling to zoom; zoom deltas accumulate so a notched wheel detent (or a whole trackpad flick) steps 20% once, instead of 20% per event.
 
 ### 0.4.3
 

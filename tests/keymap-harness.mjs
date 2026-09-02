@@ -213,6 +213,34 @@ check(
   fakeSwiper.slideTos.length === tosBeforeStale
 );
 
+// ---- mouse wheel inside the lightbox -------------------------------------
+// The overlay is the most recently created element carrying a 'wheel' listener.
+const ov = [...created].reverse().find((el) => el.listeners && el.listeners.wheel);
+const wheel = (opts) =>
+  ov.listeners.wheel.forEach((f) => f({ preventDefault() {}, ...opts }));
+
+const nextBeforeWheel = fakeSwiper.slideNextCalls;
+wheel({ deltaY: 100 });
+check('wheel down goes to next image', fakeSwiper.slideNextCalls === nextBeforeWheel + 1);
+
+const prevBeforeWheel = fakeSwiper.slidePrevCalls;
+wheel({ deltaY: -100 });
+check('wheel up goes to previous image', fakeSwiper.slidePrevCalls === prevBeforeWheel + 1);
+
+// Ctrl+wheel zooms instead of navigating: deltas accumulate until one notched
+// detent (~100px) worth has scrolled, then a single 0.2 zoom step fires.
+// Convention: scroll up (deltaY < 0) = zoom in, scroll down = zoom out.
+wheel({ deltaY: -3, ctrlKey: true });
+check('one small ctrl+wheel flurry event does not zoom yet', zoomLabel()?.textContent === '100%');
+wheel({ deltaY: -99, ctrlKey: true });
+check('ctrl+wheel accumulation zooms one step (120%)', zoomLabel()?.textContent === '120%');
+wheel({ deltaY: 102, ctrlKey: true });
+check('ctrl+wheel down zooms out one step (100%)', zoomLabel()?.textContent === '100%');
+for (let i = 0; i < 40; i++) wheel({ deltaY: -3, ctrlKey: true }); // 120px total
+check('40 tiny trackpad deltas yield exactly ONE zoom step (120%)', zoomLabel()?.textContent === '120%');
+wheel({ deltaY: 3, deltaMode: 1, ctrlKey: true }); // line-mode wheel: 3 lines = 120px
+check('line-mode ctrl+wheel notch converts to one step (100%)', zoomLabel()?.textContent === '100%');
+
 const fails = results.filter(([s]) => s === 'FAIL');
 for (const [s, name] of results) console.log(`${s}  ${name}`);
 console.log(`\n${results.length - fails.length}/${results.length} passed`);
