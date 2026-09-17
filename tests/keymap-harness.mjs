@@ -121,6 +121,10 @@ globalThis.setInterval = () => 0;
 
 // ---- load the real script ------------------------------------------------
 const src = readFileSync(new URL('../rednote-keyboard.user.js', import.meta.url), 'utf8');
+const rawScriptUrl =
+  'https://raw.githubusercontent.com/lsj5031/rednote-keyboard/main/rednote-keyboard.user.js';
+check('metadata has an explicit update URL', src.includes(`// @updateURL    ${rawScriptUrl}`));
+check('metadata has an explicit download URL', src.includes(`// @downloadURL  ${rawScriptUrl}`));
 vm.runInThisContext(src, { filename: 'rednote-keyboard.user.js' });
 
 const press = (key, opts = {}) =>

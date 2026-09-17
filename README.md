@@ -11,7 +11,7 @@ Does nothing on the home feed, search, or profile pages — shortcuts are gated 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey).
 2. Open the raw script URL and confirm the install prompt:
 
-   <https://github.com/lsj5031/rednote-keyboard/raw/main/rednote-keyboard.user.js>
+   <https://raw.githubusercontent.com/lsj5031/rednote-keyboard/main/rednote-keyboard.user.js>
 
 3. Open any note on xiaohongshu.com or rednote.com and press `?` to see the in-page help.
 
@@ -63,6 +63,10 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.6
+
+- Fixed: added explicit Tampermonkey/Violentmonkey update and download URLs so future versions update reliably regardless of redirects from the installation link.
 
 ### 0.4.5
 

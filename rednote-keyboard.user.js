@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.5
+// @version      0.4.6
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, arrow keys for the image carousel, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
+// @updateURL    https://raw.githubusercontent.com/lsj5031/rednote-keyboard/main/rednote-keyboard.user.js
+// @downloadURL  https://raw.githubusercontent.com/lsj5031/rednote-keyboard/main/rednote-keyboard.user.js
 // @match        https://www.rednote.com/*
 // @match        https://www.xiaohongshu.com/*
 // @match        https://rednote.com/*
