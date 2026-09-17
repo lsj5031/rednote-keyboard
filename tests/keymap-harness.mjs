@@ -110,7 +110,11 @@ globalThis.document.body.appendChild = function (c) {
 };
 globalThis.window = { addEventListener() {} };
 globalThis.location = { pathname: '/discovery/item/testid' };
+let mutationHandler = null;
 globalThis.MutationObserver = class {
+  constructor(fn) {
+    mutationHandler = fn;
+  }
   observe() {}
 };
 globalThis.setInterval = () => 0;
@@ -140,8 +144,16 @@ const mediaEl = () =>
 // ---- scenario ------------------------------------------------------------
 check('script installs a keydown handler', typeof keydownHandler === 'function');
 
+await new Promise((r) => setTimeout(r, 10));
+check('note opens in the lightbox by default', !!mediaEl());
+
+const imgsBeforeManualReopen = created.filter((el) => el.tagName === 'IMG').length;
+press('q');
 press('e');
-check('E opens the lightbox', !!mediaEl());
+check(
+  'E reopens a manually closed lightbox',
+  created.filter((el) => el.tagName === 'IMG').length === imgsBeforeManualReopen + 1
+);
 
 const prevBefore = fakeSwiper.slidePrevCalls;
 press('h');
@@ -240,6 +252,25 @@ for (let i = 0; i < 40; i++) wheel({ deltaY: -3, ctrlKey: true }); // 120px tota
 check('40 tiny trackpad deltas yield exactly ONE zoom step (120%)', zoomLabel()?.textContent === '120%');
 wheel({ deltaY: 3, deltaMode: 1, ctrlKey: true }); // line-mode wheel: 3 lines = 120px
 check('line-mode ctrl+wheel notch converts to one step (100%)', zoomLabel()?.textContent === '100%');
+
+// A manual close remains closed on the same note, but the next SPA note route
+// gets its own default lightbox after the outgoing carousel has been replaced.
+press('q');
+const imgsBeforeMutation = created.filter((el) => el.tagName === 'IMG').length;
+mutationHandler();
+await new Promise((r) => setTimeout(r, 10));
+check(
+  'DOM changes do not reopen a manually closed lightbox',
+  created.filter((el) => el.tagName === 'IMG').length === imgsBeforeMutation
+);
+
+location.pathname = '/explore/next-note';
+mutationHandler();
+await new Promise((r) => setTimeout(r, 300));
+check(
+  'the next note opens in the lightbox by default',
+  created.filter((el) => el.tagName === 'IMG').length === imgsBeforeMutation + 1
+);
 
 const fails = results.filter(([s]) => s === 'FAIL');
 for (const [s, name] of results) console.log(`${s}  ${name}`);

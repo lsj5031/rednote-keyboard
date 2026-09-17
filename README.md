@@ -1,6 +1,6 @@
 # RedNote Keyboard Friendly (小红书键盘增强)
 
-Keyboard shortcuts for **rednote.com / xiaohongshu.com note detail pages** — arrow keys for the image carousel, `E` for a full-screen lightbox with zoom/pan, one-key like/collect/comment, `/` for search, `?` for help. Auto-dismisses nag modals.
+Keyboard shortcuts for **rednote.com / xiaohongshu.com note detail pages** — each note opens in a full-screen lightbox by default, with arrow keys for the image carousel, one-key like/collect/comment, `/` for search, and `?` for help. Auto-dismisses nag modals.
 
 Does nothing on the home feed, search, or profile pages — shortcuts are gated to note-detail URLs (`/explore/<id>`, `/discovery/item/<id>`, `/note/<id>`), so browsing the feed with your hands on the keyboard won't accidentally like anything.
 
@@ -22,7 +22,7 @@ Only active on note detail pages; typing in an input is always left alone.
 | Key | Action |
 |---|---|
 | `←` / `→` or `A` / `D` | Previous / next image |
-| `E` | Enlarge image in a modal lightbox |
+| `E` | Toggle the full-screen lightbox |
 | `1` – `9` | Jump to the Nth image |
 | `L` | Like / unlike |
 | `S` | Collect (favorite) / un-collect |
@@ -63,6 +63,10 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.5
+
+- Changed: each note now opens in the full-screen lightbox by default. Closing it keeps it closed for that note; navigating to another note opens the lightbox again.
 
 ### 0.4.4
 

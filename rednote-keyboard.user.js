@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.4
-// @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: arrow keys for the image carousel, E to enlarge in a modal, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
+// @version      0.4.5
+// @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, arrow keys for the image carousel, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
 // @match        https://www.rednote.com/*
@@ -384,6 +384,48 @@
     lb = null;
   }
 
+  let autoOpenedNotePath = null;
+  let pendingNotePath = null;
+  let autoOpenTimer = null;
+
+  function syncDefaultLightbox() {
+    const notePath = isNoteDetail() ? location.pathname : null;
+
+    if (!notePath) {
+      clearTimeout(autoOpenTimer);
+      autoOpenTimer = null;
+      pendingNotePath = null;
+      autoOpenedNotePath = null;
+      closeLightbox();
+      return;
+    }
+    if (notePath === autoOpenedNotePath || notePath === pendingNotePath) return;
+
+    clearTimeout(autoOpenTimer);
+    closeLightbox();
+    pendingNotePath = notePath;
+
+    const tryOpen = () => {
+      if (!isNoteDetail() || location.pathname !== pendingNotePath) {
+        pendingNotePath = null;
+        syncDefaultLightbox();
+        return;
+      }
+      if (!swiper()) {
+        autoOpenTimer = setTimeout(tryOpen, 100);
+        return;
+      }
+
+      autoOpenedNotePath = pendingNotePath;
+      pendingNotePath = null;
+      autoOpenTimer = null;
+      if (!lb) openLightbox();
+    };
+
+    // Let a client-side route change replace the previous note's carousel.
+    autoOpenTimer = setTimeout(tryOpen, autoOpenedNotePath === null ? 0 : 250);
+  }
+
   // drag-to-pan (window-level so it keeps tracking outside the overlay)
   window.addEventListener('pointermove', (e) => {
     if (!lbDragging || !lb) return;
@@ -479,12 +521,17 @@
     lastDismiss = now;
     dismissAlerts();
   }
-  new MutationObserver(dismissAlertsThrottled).observe(document.body, {
+  function onPageMutation() {
+    dismissAlertsThrottled();
+    syncDefaultLightbox();
+  }
+  new MutationObserver(onPageMutation).observe(document.body, {
     childList: true,
     subtree: true,
   });
   setInterval(dismissAlerts, 5000);
   dismissAlerts();
+  syncDefaultLightbox();
 
   /* ------------------------------------------------------------------ *
    * Keyboard handling
