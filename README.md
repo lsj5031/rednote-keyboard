@@ -64,6 +64,30 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 
 ## Changelog
 
+### 0.4.11
+
+- Fixed: the auto-opened lightbox can no longer end up on an **invisible first image** — this was reproducible on the live site with the previously published version: when Swiper existed but the active slide's `<img>` wasn't rendered yet, the lightbox rendered an *empty* `<img>`, whose empty `src` resolves to the **page URL** — a 0×0 broken image that never recovers until you scroll next and back. The lightbox now waits (with the spinner) for a real URL for as long as it takes; the old wait also gave up after ~2 s and rendered the empty `<img>` anyway, which is the same bug on a slow connection.
+- Fixed: the first image now uses the note's **full-quality `urlDefault`** (from the page's own `__INITIAL_STATE__`, `http://` upgraded to `https://`) while the slide still carries its blur-up **preview** (`…!nd_prv_…`). The site renders the preview into the first slide first and swaps in the sharp `…!nd_dft_…` copy a moment later, so the lightbox used to snapshot the blurry one. If the CDN rejects a stale state URL, it falls back to the slide's own copy once.
+- Improved: when the slide thumb has no intrinsic size yet, the reserved aspect box falls back to the note state's declared width/height, and the spinner no longer forces layout on every 100 ms re-check while waiting.
+
+### 0.4.10
+
+- Fixed: the lightbox now loads the **largest `srcset` / `data-srcset` variant** the slide declares instead of `currentSrc` — `currentSrc` is the candidate the browser picked for the small carousel slot (via `srcset` + `sizes`), not for a full-screen view at up to 8× zoom, which made images (notably the first, auto-opened one) look soft.
+- Added: the lightbox reserves the image's **aspect-ratio box** while it loads (from the source slide's `naturalWidth`/`naturalHeight` or its `width`/`height` attributes; `MEDIA_CSS` keeps `height:auto` so the max-width/max-height clamps preserve the ratio). The hints are dropped on load so intrinsic sizing always wins — the image no longer pops into place.
+- Changed: the spinner now **fades in/out** (150 ms opacity transition, removed from layout 200 ms after hiding) instead of blinking — images that load from cache within a couple of frames never become visibly opaque.
+
+### 0.4.9
+
+- Added: a small centered spinner shows in the lightbox whenever there's no image on screen yet — while waiting for the slide's image URL (auto-open vs. the page's lazy loader) and while the `<img>` / `<video>` loads — instead of a black void. It hides as soon as the media fires `load` (or `loadeddata` for video), and never spins for media that has already been replaced.
+
+### 0.4.8
+
+- Fixed: the auto-opened lightbox no longer shows a blank first image. `syncLightbox` used to render the active slide the moment Swiper existed — but the slide's `<img>` often had no usable URL yet (lazy loader hadn't run: no `src`, real URL only in `data-src`, or a transparent `data:` placeholder), so an empty `<img>` was rendered until you scrolled next and back. Sources are now resolved (`currentSrc` → `data-src` → `src`, unusable ones skipped) and, when none resolves yet, the lightbox re-checks every 100 ms (up to ~2 s) instead of rendering blank.
+
+### 0.4.7
+
+- Fixed: wheel navigation in the lightbox is now smooth with an external mouse on macOS. A single notch there arrives as several small pixel `wheel` events (plus zero-delta gesture events when the pointer veers sideways mid-scroll), and the old handler flipped one image **per event** — a zero-delta event even flipped to the *next* image, so scrolling up fought against going to the previous image. Wheel deltas now accumulate to one notched detent (~100px) before exactly one image change, matching how `Ctrl`/`⌘`+wheel zoom already worked.
+
 ### 0.4.6
 
 - Fixed: added explicit Tampermonkey/Violentmonkey update and download URLs so future versions update reliably regardless of redirects from the installation link.

@@ -22,12 +22,26 @@ const likeButton = {
 const selectors = {
   '.interact-container .like-wrapper': likeButton,
 };
+let slideSrcset =
+  'https://example.test/slide-480.jpg 480w, https://example.test/slide-1440.jpg 1440w, https://example.test/slide-750.jpg 750w';
+const fakeSlideImg = {
+  currentSrc: 'https://example.test/slide-750.jpg', // the browser's pick for the small slide
+  src: 'https://example.test/slide-750.jpg',
+  widthAttr: '800',
+  heightAttr: '1000',
+  getAttribute(name) {
+    if (name === 'srcset') return slideSrcset;
+    if (name === 'width') return this.widthAttr;
+    if (name === 'height') return this.heightAttr;
+    return null;
+  },
+  complete: true,
+};
 const fakeSwiper = {
-  slides: [
-    { getAttribute: () => '0', querySelector: () => null },
-    { getAttribute: () => '1', querySelector: () => null },
-    { getAttribute: () => '2', querySelector: () => null },
-  ],
+  slides: ['0', '1', '2'].map((idx) => ({
+    getAttribute: () => idx,
+    querySelector: (sel) => (sel === 'img' ? fakeSlideImg : null),
+  })),
   el: { querySelector: () => null },
   activeIndex: 0,
   realIndex: 0,
@@ -64,6 +78,9 @@ function makeEl(tag = 'div') {
       (this.listeners[t] ||= []).push(f);
     },
     setAttribute() {},
+    removeAttribute(k) {
+      delete this[k];
+    },
     append(...kids) {
       this.children.push(...kids);
     },
@@ -150,6 +167,14 @@ check('script installs a keydown handler', typeof keydownHandler === 'function')
 
 await new Promise((r) => setTimeout(r, 10));
 check('note opens in the lightbox by default', !!mediaEl());
+check(
+  'lightbox picks the largest srcset variant over the slide pick',
+  mediaEl().src === 'https://example.test/slide-1440.jpg'
+);
+check(
+  'lightbox reserves the source aspect box (width/height attrs)',
+  mediaEl().width === 800 && mediaEl().height === 1000
+);
 
 const imgsBeforeManualReopen = created.filter((el) => el.tagName === 'IMG').length;
 press('q');
@@ -243,6 +268,26 @@ const prevBeforeWheel = fakeSwiper.slidePrevCalls;
 wheel({ deltaY: -100 });
 check('wheel up goes to previous image', fakeSwiper.slidePrevCalls === prevBeforeWheel + 1);
 
+// macOS mouse noise: one notch arrives as several tiny pixel events, and
+// zero-delta gesture events appear mid-scroll (e.g. when the pointer veers
+// sideways). The old handler flipped to the NEXT image on deltaY === 0, so a
+// smooth scroll-up could not land on the previous image. Deltas must
+// accumulate to one ~100px detent before exactly one slide change fires.
+const nextBeforeNoise = fakeSwiper.slideNextCalls;
+const prevBeforeNoise = fakeSwiper.slidePrevCalls;
+wheel({ deltaY: 0 });
+wheel({ deltaY: -4 });
+wheel({ deltaY: 0 });
+wheel({ deltaY: -4 });
+check('zero-delta wheel events never flip to the next image', fakeSwiper.slideNextCalls === nextBeforeNoise);
+check('tiny up-scroll flurry does not skip images early', fakeSwiper.slidePrevCalls === prevBeforeNoise);
+wheel({ deltaY: -92 }); // -100 total = one detent
+check(
+  'accumulated up-scroll detent moves exactly one image back',
+  fakeSwiper.slidePrevCalls === prevBeforeNoise + 1 &&
+    fakeSwiper.slideNextCalls === nextBeforeNoise
+);
+
 // Ctrl+wheel zooms instead of navigating: deltas accumulate until one notched
 // detent (~100px) worth has scrolled, then a single 0.2 zoom step fires.
 // Convention: scroll up (deltaY < 0) = zoom in, scroll down = zoom out.
@@ -256,6 +301,128 @@ for (let i = 0; i < 40; i++) wheel({ deltaY: -3, ctrlKey: true }); // 120px tota
 check('40 tiny trackpad deltas yield exactly ONE zoom step (120%)', zoomLabel()?.textContent === '120%');
 wheel({ deltaY: 3, deltaMode: 1, ctrlKey: true }); // line-mode wheel: 3 lines = 120px
 check('line-mode ctrl+wheel notch converts to one step (100%)', zoomLabel()?.textContent === '100%');
+
+// Spinner: it must cover both wait states — while the slide's URL resolves
+// and while the rendered <img> loads — and hide as soon as the image is up.
+const spinnerEl = () =>
+  [...created].reverse().find((el) => /rnk-spin/.test(el.style.cssText || ''));
+const fire = (el, type) => (el && el.listeners && el.listeners[type]
+  ? el.listeners[type]
+  : []
+).forEach((f) => f());
+
+check('spinner fades via an opacity transition', /transition:opacity/.test(spinnerEl().style.cssText));
+fire(mediaEl(), 'load'); // the currently displayed image finishes loading
+check('spinner fades out once the visible image has loaded', spinnerEl().style.opacity === '0');
+
+// Auto-open can beat the page's lazy loader: the active slide's <img> may
+// have no usable URL yet (no src, only data-src, or a data: placeholder).
+// The lightbox must WAIT for a real source instead of rendering a blank <img>
+// — the "initial image isn't visible until I scroll away and back" bug.
+const resolvedSrc = fakeSlideImg.currentSrc;
+const resolvedSrcset = slideSrcset;
+fakeSlideImg.currentSrc = '';
+fakeSlideImg.src = '';
+slideSrcset = '';
+const imgsBeforeLazy = created.filter((el) => el.tagName === 'IMG').length;
+press('ArrowRight'); // resync while the slide image is unresolved
+check(
+  'unresolved slide image renders no blank <img>',
+  created.filter((el) => el.tagName === 'IMG').length === imgsBeforeLazy
+);
+check(
+  'spinner shows while the slide image resolves',
+  spinnerEl().style.display === 'block' && spinnerEl().style.opacity === '1'
+);
+// The wait used to give up after ~2s and render the empty <img> anyway —
+// an empty src resolves to the PAGE URL, i.e. a 0×0 broken image: exactly
+// the blank-first-image bug, just on a slow connection. It must wait as
+// long as it takes (the lightbox is the only thing that can re-trigger it).
+await new Promise((r) => setTimeout(r, 2600)); // blows past the old 2s budget
+check(
+  'still no blank <img> after the old 2s retry budget runs out',
+  created.filter((el) => el.tagName === 'IMG').length === imgsBeforeLazy
+);
+check(
+  'spinner survives the long wait',
+  spinnerEl().style.display === 'block' && spinnerEl().style.opacity === '1'
+);
+fakeSlideImg.currentSrc = resolvedSrc;
+fakeSlideImg.src = resolvedSrc;
+slideSrcset = resolvedSrcset;
+fakeSlideImg.naturalWidth = 1080;
+fakeSlideImg.naturalHeight = 1440;
+await new Promise((r) => setTimeout(r, 150)); // retry fires at ~100ms
+check(
+  'lightbox renders the image once the slide resolves',
+  created.filter((el) => el.tagName === 'IMG').length === imgsBeforeLazy + 1
+);
+check(
+  'reserved box prefers the slide image natural size',
+  mediaEl().width === 1080 && mediaEl().height === 1440
+);
+check(
+  'new image keeps the spinner up while it loads',
+  spinnerEl().style.display === 'block' && spinnerEl().style.opacity === '1'
+);
+fire(mediaEl(), 'load');
+check('spinner fades out after the new image fires load', spinnerEl().style.opacity === '0');
+check(
+  'aspect hints are dropped once the intrinsic size is known',
+  !mediaEl().width && !mediaEl().height
+);
+
+// At auto-open the first slide often still carries the blur-up PREVIEW
+// (…!nd_prv_…) — the site swaps in the sharp …!nd_dft_… copy a moment later.
+// The lightbox must take the note state's full-quality URL instead of
+// snapshotting the preview (verified live on xiaohongshu.com).
+const PRV_SRC = 'https://example.test/notes!nd_prv_wlteh.jpg';
+const DFT_SRC = 'https://example.test/notes!nd_dft_wlteh.jpg';
+fakeSlideImg.currentSrc = PRV_SRC;
+fakeSlideImg.src = PRV_SRC;
+slideSrcset = '';
+globalThis.window.__INITIAL_STATE__ = {
+  note: {
+    noteDetailMap: {
+      testid: {
+        note: {
+          imageList: [
+            { urlDefault: 'http://example.test/notes!nd_dft_wlteh.jpg', width: 1080, height: 1440 },
+          ],
+        },
+      },
+    },
+  },
+};
+// An unloaded slide thumb has no intrinsic size — the state dims reserve the box
+fakeSlideImg.naturalWidth = 0;
+fakeSlideImg.naturalHeight = 0;
+fakeSlideImg.widthAttr = null;
+fakeSlideImg.heightAttr = null;
+press('ArrowRight');
+check(
+  'note-state full-quality URL wins over the slide blur-up preview',
+  mediaEl().src === DFT_SRC
+);
+check(
+  'state URL is upgraded to https (http is blocked as mixed content)',
+  !/^http:/.test(mediaEl().src)
+);
+check(
+  'aspect box falls back to note-state dims while the slide thumb is unloaded',
+  mediaEl().width === 1080 && mediaEl().height === 1440
+);
+// A stale signed state URL must not strand the lightbox: hop to the slide's copy
+fire(mediaEl(), 'error');
+check('a rejected state URL falls back to the slide image', mediaEl().src === PRV_SRC);
+delete globalThis.window.__INITIAL_STATE__;
+fakeSlideImg.currentSrc = resolvedSrc;
+fakeSlideImg.src = resolvedSrc;
+slideSrcset = resolvedSrcset;
+fakeSlideImg.naturalWidth = 1080;
+fakeSlideImg.naturalHeight = 1440;
+fakeSlideImg.widthAttr = '800';
+fakeSlideImg.heightAttr = '1000';
 
 // A manual close remains closed on the same note, but the next SPA note route
 // gets its own default lightbox after the outgoing carousel has been replaced.

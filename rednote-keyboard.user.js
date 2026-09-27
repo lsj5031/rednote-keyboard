@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.6
+// @version      0.4.11
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, arrow keys for the image carousel, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -176,27 +176,128 @@
   let lbDragMoved = false; // suppress the click a pan-drag ends with
   let lbDragStart = { x: 0, y: 0, px: 0, py: 0 };
   let lbPendingG = 0; // timestamp of a waiting "g" (for the gg chord)
+  let lbSyncTimer = null; // retry timer while the slide's image URL isn't ready
 
   const MEDIA_CSS =
-    'max-width:94vw;max-height:92vh;object-fit:contain;transition:transform .15s ease;' +
+    'max-width:94vw;max-height:92vh;height:auto;object-fit:contain;transition:transform .15s ease;' +
     'user-select:none;-webkit-user-drag:none';
 
+  // The slide's own src already serves full resolution (verified 1080px wide);
+  // stripping the CDN transform suffix returns 403, so reuse it as-is.
+
+  // Largest declared variant wins: currentSrc is the candidate the browser
+  // picked for the SLIDE's small slot (srcset + sizes), not for a full-screen
+  // lightbox at up to 94vw / 8x zoom — reusing it made images load soft.
+  function bestSrcset(img) {
+    let best = '';
+    let bestW = 0;
+    for (const attr of ['srcset', 'data-srcset']) {
+      const ss = img.getAttribute(attr);
+      if (!ss) continue;
+      for (const cand of ss.split(',')) {
+        const m = cand.trim().match(/(\S+)\s+(\d+)w/);
+        if (m && +m[2] > bestW) {
+          bestW = +m[2];
+          best = m[1];
+        }
+      }
+    }
+    return best;
+  }
+
   function mediaUrl(img) {
-    // The slide's own src already serves full resolution (verified 1080px wide);
-    // stripping the CDN transform suffix returns 403, so reuse it as-is.
     if (!img) return '';
-    return img.currentSrc || img.src || '';
+    // A slide's <img> can still be a lazy-load shell when the lightbox opens:
+    // no src yet (the real URL sits in data-src) or a transparent data:
+    // placeholder. Rendering either one shows an EMPTY lightbox until you
+    // scrolled next and back — so skip unusable sources.
+    return (
+      [bestSrcset(img), img.currentSrc, img.getAttribute('data-src'), img.src].find(
+        (u) => u && !u.startsWith('data:')
+      ) || ''
+    );
+  }
+
+  // The blur-up preview marker in a CDN variant name (…!nd_prv_… vs the full
+  // …!nd_dft_… copy).
+  const PREVIEW_URL_RE = /[!_-]prv[!_-]/;
+
+  // Full-quality image i of the note on screen, straight from the page's own
+  // note state. The slide's <img> is often still the blur-up PREVIEW when the
+  // lightbox auto-opens — the site swaps in the sharp default a moment later —
+  // and a snapshot of the preview is why the FIRST image looked soft until you
+  // scrolled away and back. The state URL is http://, which an https page
+  // blocks as mixed content, so normalize it. The map keeps every note visited
+  // this session, hence the lookup must match the note in the URL.
+  function stateImage(i) {
+    try {
+      const root = window.__INITIAL_STATE__;
+      const map = root && root.note && root.note.noteDetailMap;
+      const m = location.pathname.match(/\/(?:explore|discovery\/item|note)\/([^/?#]+)/);
+      const id = m && m[1];
+      const k =
+        map && id && (map[id] ? id : Object.keys(map).find((x) => x.indexOf(id) !== -1));
+      const holder = k && map[k];
+      const note = holder && (holder.note || holder);
+      const im = note && note.imageList && note.imageList[i];
+      if (!im || !im.urlDefault) return null;
+      return {
+        url: im.urlDefault.replace(/^http:\/\//, 'https://'),
+        width: +im.width || 0,
+        height: +im.height || 0,
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Clone-correct index of a slide: data-swiper-slide-index wins (valid on
+  // looped clones in every Swiper version), else the instance's real index.
+  function activeImageIndex(slide) {
+    const attr = slide && slide.getAttribute('data-swiper-slide-index');
+    if (attr) return +attr;
+    const sw = swiper();
+    if (!sw) return 0;
+    return sw.realIndex != null ? sw.realIndex : sw.activeIndex || 0;
   }
 
   function applyTransform() {
-    if (!lb) return;
+    if (!lb || !lb.media) return; // media can be absent while a slide resolves
     lb.media.style.transform = `translate(${lbPan.x}px, ${lbPan.y}px) scale(${lbZoom})`;
     lb.zoomLabel.textContent = `${Math.round(lbZoom * 100)}%`;
     lb.counter.textContent = `${swiper() ? swiper().realIndex + 1 : 1}/${slideCount()}`;
   }
 
+  // Spinner: on whenever the lightbox has no ready media — while the slide's
+  // URL resolves and while the <img>/<video> loads. Passing `media` ignores
+  // stale load events from media that has already been replaced.
+  // It FADES (150ms) instead of blinking: an image that loads from cache
+  // within a couple of frames never gets visibly opaque.
+  let lbSpinToken = 0;
+  function lbSpinner(show, media) {
+    if (!lb || !lb.spinner) return;
+    if (media && lb.media !== media) return;
+    const el = lb.spinner;
+    if (show) {
+      // Already fully up: skip the forced layout (the URL-wait re-checks
+      // every 100ms for as long as it takes).
+      if (el.style.display === 'block' && el.style.opacity === '1') return;
+      lbSpinToken++; // cancels a pending fade-out's display:none
+      el.style.display = 'block';
+      void el.offsetHeight; // flush layout so opacity animates from 0
+      el.style.opacity = '1';
+      return;
+    }
+    el.style.opacity = '0';
+    const token = ++lbSpinToken;
+    setTimeout(() => {
+      if (token === lbSpinToken && lb && lb.spinner === el && el.style.opacity === '0')
+        el.style.display = 'none';
+    }, 200);
+  }
+
   function clampPan() {
-    if (!lb || lbZoom <= 1) {
+    if (!lb || !lb.media || lbZoom <= 1) {
       lbPan = { x: 0, y: 0 };
       return;
     }
@@ -217,23 +318,26 @@
     applyTransform();
   }
 
-  // Wheel = prev/next image; hold Ctrl/⌘ to zoom instead. Zooming one 0.2
-  // step per wheel EVENT would machine-gun on trackpads (a single flick
-  // fires dozens of small deltas), so accumulate deltas and emit one step
+  // Wheel = prev/next image; hold Ctrl/⌘ to zoom instead. One step per wheel
+  // EVENT would machine-gun: a trackpad flick fires dozens of small deltas,
+  // and on macOS one mouse-notch arrives as several small pixel events plus
+  // zero-delta gesture events (fired when the pointer veers sideways mid-
+  // scroll — they used to flip to the NEXT image, so scrolling up fought
+  // against going to the previous one). Accumulate deltas and emit one step
   // per notched detent's worth (~100px; line-mode wheels count as a detent
-  // per event).
+  // per event), like Ctrl/⌘+wheel zoom already did.
   let lbWheelAcc = 0;
   function lbWheel(e) {
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      lbWheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
-      while (Math.abs(lbWheelAcc) >= 100) {
-        lbZoomBy(lbWheelAcc > 0 ? -0.2 : 0.2); // scroll down = zoom out
-        lbWheelAcc -= lbWheelAcc > 0 ? 100 : -100;
+    lbWheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+    while (Math.abs(lbWheelAcc) >= 100) {
+      const dir = lbWheelAcc > 0 ? 1 : -1;
+      if (e.ctrlKey || e.metaKey) lbZoomBy(-dir * 0.2); // scroll down = zoom out
+      else {
+        moveSlide(dir);
+        syncLightbox();
       }
-    } else {
-      moveSlide(e.deltaY < 0 ? -1 : 1);
-      syncLightbox();
+      lbWheelAcc -= dir * 100;
     }
   }
 
@@ -337,10 +441,25 @@
     hint.style.cssText =
       'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:2;color:#999;font-size:12px';
 
-    ov.append(view, closeBtn, prevBtn, nextBtn, counter, zoomBar, hint);
+    // One injected keyframes rule for the spinner (id-guarded like the toast).
+    if (!document.getElementById('rnk-spin')) {
+      const st = document.createElement('style');
+      st.id = 'rnk-spin';
+      st.textContent = '@keyframes rnk-spin{to{transform:rotate(360deg)}}';
+      document.body.appendChild(st);
+    }
+    const spinner = document.createElement('div');
+    spinner.setAttribute('aria-hidden', 'true');
+    spinner.style.cssText =
+      'display:none;opacity:0;transition:opacity .15s ease;position:absolute;left:50%;top:50%;' +
+      'margin:-16px 0 0 -16px;box-sizing:border-box;' +
+      'width:32px;height:32px;border:3px solid rgba(255,255,255,.2);border-top-color:rgba(255,255,255,.85);' +
+      'border-radius:50%;animation:rnk-spin .8s linear infinite;z-index:1';
+
+    ov.append(view, spinner, closeBtn, prevBtn, nextBtn, counter, zoomBar, hint);
     document.body.appendChild(ov);
 
-    lb = { ov, view, media: null, counter, zoomLabel, pausedVideos };
+    lb = { ov, view, media: null, counter, zoomLabel, pausedVideos, spinner };
     syncLightbox();
   }
 
@@ -348,10 +467,34 @@
     if (!lb) return;
     const slide = currentSlideEl();
     const video = slide ? slide.querySelector('video') : null;
+    const srcImg = slide ? slide.querySelector('img') : null;
     if (lb.media) {
       if (lb.media.tagName === 'VIDEO') lb.media.pause();
       lb.media.remove();
+      lb.media = null;
     }
+
+    // While the slide's copy is still the blur-up preview, show the full-
+    // quality URL from the note state instead (verified live: the first
+    // slide carries …!nd_prv_… at open and upgrades to …!nd_dft_… after).
+    const slideUrl = mediaUrl(srcImg);
+    const st = stateImage(activeImageIndex(slide));
+    const resolved = st && st.url && slideUrl && PREVIEW_URL_RE.test(slideUrl) ? st.url : slideUrl;
+    const usedState = resolved !== slideUrl;
+
+    // The auto-open can beat the page's own rendering: swiper exists but the
+    // active slide's <img> may not be in the DOM yet, or may only carry an
+    // empty/data: placeholder. Rendering that empty <img> was the "blank
+    // first image" bug — an EMPTY src resolves to the page URL, giving a
+    // 0×0 broken image that never recovers until you scroll next and back.
+    // Spin and re-check every 100ms for as long as the lightbox is open.
+    if (!video && !resolved) {
+      lbSpinner(true);
+      clearTimeout(lbSyncTimer);
+      lbSyncTimer = setTimeout(syncLightbox, 100);
+      return;
+    }
+    clearTimeout(lbSyncTimer); // a pending re-check must not re-render later
 
     if (video) {
       const v = document.createElement('video');
@@ -359,8 +502,10 @@
       v.controls = true;
       v.playsInline = true;
       v.style.cssText = MEDIA_CSS.replace('object-fit:contain', '');
+      v.addEventListener('loadeddata', () => lbSpinner(false, v));
       lb.view.appendChild(v);
       lb.media = v;
+      lbSpinner(v.readyState < 2);
       // Opening via a keypress counts as user activation, so unmuted playback
       // is usually allowed; fall back to muted if the browser still blocks it.
       v.play().catch(() => {
@@ -370,9 +515,44 @@
     } else {
       const img = document.createElement('img');
       img.style.cssText = MEDIA_CSS;
-      img.src = mediaUrl(slide ? slide.querySelector('img') : null);
+      // Reserve the source's aspect-ratio box while the image loads so it
+      // doesn't pop into place: width/height attributes give an unloaded <img>
+      // its ratio (MEDIA_CSS keeps height:auto, so the max-* clamps preserve
+      // it). Dropped again once loaded — intrinsic size always wins (the
+      // slide's thumb dims could pin us wrong when the URL came from data-src).
+      const w =
+        (srcImg && (srcImg.naturalWidth || +srcImg.getAttribute('width'))) ||
+        (st && st.width) || 0;
+      const h =
+        (srcImg && (srcImg.naturalHeight || +srcImg.getAttribute('height'))) ||
+        (st && st.height) || 0;
+      if (w && h) {
+        img.width = w;
+        img.height = h;
+      }
+      img.addEventListener('load', () => {
+        img.removeAttribute('width');
+        img.removeAttribute('height');
+        lbSpinner(false, img);
+      });
+      let triedSlideCopy = false;
+      img.addEventListener('error', () => {
+        // Signed CDN URLs can go stale in a long-lived tab — hop to the
+        // slide's own copy once before giving up.
+        if (!triedSlideCopy && usedState) {
+          const alt = mediaUrl(srcImg);
+          if (alt && alt !== resolved) {
+            triedSlideCopy = true;
+            img.src = alt;
+            return;
+          }
+        }
+        lbSpinner(false, img);
+      });
+      img.src = resolved;
       lb.view.appendChild(img);
       lb.media = img;
+      lbSpinner(!img.complete);
     }
     lbZoom = 1;
     lbPan = { x: 0, y: 0 };
@@ -381,6 +561,7 @@
 
   function closeLightbox() {
     if (!lb) return;
+    clearTimeout(lbSyncTimer);
     lb.ov.remove();
     (lb.pausedVideos || []).forEach((v) => v.play().catch(() => {}));
     lb = null;
