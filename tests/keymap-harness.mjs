@@ -19,8 +19,16 @@ const likeButton = {
     this.clicked++;
   },
 };
+const notePanel = {
+  scrollTop: 0,
+  getClientRects: () => [{}],
+  scrollBy({ top }) {
+    this.scrollTop += top;
+  },
+};
 const selectors = {
   '.interact-container .like-wrapper': likeButton,
+  '.note-container .note-scroller': notePanel,
 };
 let slideSrcset =
   'https://example.test/slide-480.jpg 480w, https://example.test/slide-1440.jpg 1440w, https://example.test/slide-750.jpg 750w';
@@ -178,6 +186,38 @@ check(
 
 const imgsBeforeManualReopen = created.filter((el) => el.tagName === 'IMG').length;
 press('q');
+
+press('ArrowDown');
+press('j', { repeat: true });
+press('J');
+check('down arrow and J scroll note text, including held keys', notePanel.scrollTop === 360);
+press('ArrowUp');
+press('k', { repeat: true });
+press('K');
+check('up arrow and K scroll note text back up', notePanel.scrollTop === 0);
+notePanel.scrollTop = 240;
+for (const opts of [
+  { target: { nodeType: 1, tagName: 'INPUT' } },
+  { target: { nodeType: 1, tagName: 'TEXTAREA' } },
+  { target: { nodeType: 1, tagName: 'DIV', isContentEditable: true } },
+  { ctrlKey: true }, { metaKey: true }, { altKey: true },
+  { isComposing: true }, { keyCode: 229 },
+]) press('j', opts);
+check('scroll keys leave typing, modifiers, and IME alone', notePanel.scrollTop === 240);
+location.pathname = '/explore';
+press('ArrowDown');
+check('scroll keys do nothing on the feed', notePanel.scrollTop === 240);
+location.pathname = '/discovery/item/testid';
+press('?');
+press('j');
+check('scroll keys leave the note alone while help is open', notePanel.scrollTop === 240);
+press('?');
+delete selectors['.note-container .note-scroller'];
+let prevented = false;
+press('ArrowDown', { preventDefault() { prevented = true; } });
+check('missing panel leaves native scrolling available', !prevented);
+selectors['.note-container .note-scroller'] = notePanel;
+
 press('e');
 check(
   'E reopens a manually closed lightbox',
@@ -216,6 +256,7 @@ check('j pans down while zoomed', /translate\(.*px,\s*80px/.test(mediaEl().style
 press('k');
 press('k');
 check('k pans up past start point', /translate\(.*px,\s*-80px/.test(mediaEl().style.transform));
+check('lightbox J/K do not scroll the note behind it', notePanel.scrollTop === 240);
 
 const imgsBeforeClose = created.filter((el) => el.tagName === 'IMG').length;
 press('q');

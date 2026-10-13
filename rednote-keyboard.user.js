@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.11
-// @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, arrow keys for the image carousel, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
+// @version      0.4.12
+// @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, left/right for the image carousel, up/down or J/K to scroll note text, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
 // @updateURL    https://raw.githubusercontent.com/lsj5031/rednote-keyboard/main/rednote-keyboard.user.js
@@ -630,6 +630,7 @@
    * ------------------------------------------------------------------ */
   const SHORTCUTS = [
     ['← / →  or  A / D', '上一张 / 下一张图片'],
+    ['↓ / ↑  or  J / K', '向下 / 向上滚动右侧正文和评论（可长按）'],
     ['E', '放大图片（模态全屏查看）'],
     ['1 – 9', '跳到第 N 张图片'],
     ['L', '点赞 / 取消点赞'],
@@ -728,15 +729,15 @@
       if (e.isComposing || e.keyCode === 229) return;
 
       // Holding a key must not machine-gun toggles (like/unlike, lightbox…).
-      // Arrows stay repeatable for flipping through images; with the lightbox
-      // open, hjkl are movement keys too — but ONLY there (held L must still
-      // never spam like/unlike on the note page).
+      // Carousel and note scrolling keys repeat; h/l repeat only in the
+      // lightbox (held L must never spam like/unlike on the note page).
       if (
         e.repeat &&
         !(
           e.key === 'ArrowLeft' ||
           e.key === 'ArrowRight' ||
-          (lb && ['h', 'l', 'j', 'k'].includes(e.key))
+          ['ArrowDown', 'ArrowUp', 'j', 'J', 'k', 'K'].includes(e.key) ||
+          (lb && ['h', 'l'].includes(e.key))
         )
       )
         return;
@@ -900,6 +901,22 @@
           handled();
           moveSlide(1);
           break;
+        case 'ArrowDown':
+        case 'ArrowUp':
+        case 'j':
+        case 'J':
+        case 'k':
+        case 'K': {
+          if (helpVisible) break;
+          const panel = Array.from(
+            document.querySelectorAll('.note-container .note-scroller')
+          ).find(visible);
+          if (!panel) break;
+          handled();
+          const down = ['ArrowDown', 'j', 'J'].includes(e.key);
+          panel.scrollBy({ top: down ? 120 : -120, behavior: 'instant' });
+          break;
+        }
         case 'e':
         case 'E':
           handled();

@@ -22,6 +22,7 @@ Only active on note detail pages; typing in an input is always left alone.
 | Key | Action |
 |---|---|
 | `←` / `→` or `A` / `D` | Previous / next image |
+| `↓` / `↑` or `J` / `K` | Scroll the right-hand note text and comments down / up (hold to repeat) |
 | `E` | Toggle the full-screen lightbox |
 | `1` – `9` | Jump to the Nth image |
 | `L` | Like / unlike |
@@ -47,7 +48,7 @@ Only active on note detail pages; typing in an input is always left alone.
 | Drag | Pan while zoomed (works from anywhere, including the image itself) |
 | `Esc` / `E` / `q` / ✕ / click background | Close |
 
-Held-down keys don't repeat (except arrows anywhere, and `h j k l` while the lightbox is open), IME composition is never intercepted, and modifier combos pass through to the browser.
+Held-down keys don't repeat except carousel arrows, note scrolling keys, and `h j k l` while the lightbox is open. IME composition is never intercepted, and modifier combos pass through to the browser.
 
 Inside the lightbox, the mouse wheel flips to the previous/next image (scroll up = previous, scroll down = next) — hold `Ctrl` / `⌘` while scrolling to zoom instead.
 
@@ -63,6 +64,10 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.12
+
+- Added: `↓` / `↑` or `J` / `K` scroll the right-hand note text and comments by 120 pixels per keypress, with hold-to-repeat support. Close the default lightbox with `Esc`, `E`, or `q` to read and scroll the note. The image carousel and page stay in place. Typing, modifier combos, and the help overlay are left alone; `j` / `k` still pan while the lightbox is open.
 
 ### 0.4.11
 
