@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.12
+// @version      0.4.13
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, left/right for the image carousel, up/down or J/K to scroll note text, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -632,7 +632,6 @@
     ['← / →  or  A / D', '上一张 / 下一张图片'],
     ['↓ / ↑  or  J / K', '向下 / 向上滚动右侧正文和评论（可长按）'],
     ['E', '放大图片（模态全屏查看）'],
-    ['1 – 9', '跳到第 N 张图片'],
     ['L', '点赞 / 取消点赞'],
     ['S', '收藏'],
     ['C', '聚焦评论输入框'],
@@ -646,7 +645,6 @@
     ['← / →  or  h / l', '切换图片'],
     ['j / k', '放大后上下平移'],
     ['gg / G', '跳到第一张 / 最后一张'],
-    ['1 – 9', '跳到第 N 张图片'],
     ['滚轮', '上一张 / 下一张'],
     ['Ctrl + 滚轮 / + / −', '缩放（最多 8 倍）'],
     ['0 或 ⤾', '重置缩放'],
@@ -749,6 +747,7 @@
 
       // Lightbox takes priority when open
       if (lb) {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
         switch (e.key) {
           case 'Escape':
           case 'e':
@@ -832,17 +831,6 @@
             lbPan = { x: 0, y: 0 };
             applyTransform();
             break;
-          default:
-            // digits jump to the Nth image (same as on the page behind)
-            if (/^[1-9]$/.test(e.key)) {
-              const total = slideCount();
-              if (total >= +e.key) {
-                handled();
-                lbPendingG = 0;
-                gotoSlide(+e.key);
-                syncLightbox();
-              }
-            }
         }
         return;
       }
@@ -961,14 +949,6 @@
           handled();
           toggleHelp();
           break;
-        default:
-          if (/^[1-9]$/.test(e.key)) {
-            const total = slideCount();
-            if (total >= +e.key) {
-              handled();
-              gotoSlide(+e.key);
-            }
-          }
       }
     },
     true // capture: intercept before the page's own handlers

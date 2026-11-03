@@ -242,10 +242,22 @@ check('gg jumps to first image', fakeSwiper.slideTos.at(-1) === 0);
 press('G');
 check('G jumps to last image', fakeSwiper.slideTos.at(-1) === 2);
 
-press('2');
-check('digit jumps to Nth image inside lightbox', fakeSwiper.slideTos.at(-1) === 1);
-press('9');
-check('digit beyond slide count is ignored', fakeSwiper.slideTos.at(-1) === 1);
+function checkBrowserShortcuts(context) {
+  for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    const keys = Object.keys(modifiers).length ? '0123456789adhljkge+-' : '123456789';
+    const before = JSON.stringify([fakeSwiper.realIndex, fakeSwiper.slideTos,
+      fakeSwiper.slidePrevCalls, fakeSwiper.slideNextCalls, mediaEl()?.style.transform]);
+    let intercepted = false;
+    for (const key of keys) press(key, { ...modifiers,
+      preventDefault() { intercepted = true; },
+      stopPropagation() { intercepted = true; },
+    });
+    check(context + ' leaves ' + (Object.keys(modifiers)[0] || 'bare digits') + ' to the browser',
+      !intercepted && before === JSON.stringify([fakeSwiper.realIndex, fakeSwiper.slideTos,
+        fakeSwiper.slidePrevCalls, fakeSwiper.slideNextCalls, mediaEl()?.style.transform]));
+  }
+}
+checkBrowserShortcuts('lightbox');
 
 press('+');
 press('+');
@@ -271,6 +283,7 @@ check(
 );
 
 press('q'); // close again — the check above left the lightbox reopened
+checkBrowserShortcuts('note page');
 
 const likeBefore = likeButton.clicked;
 press('l');

@@ -24,7 +24,6 @@ Only active on note detail pages; typing in an input is always left alone.
 | `←` / `→` or `A` / `D` | Previous / next image |
 | `↓` / `↑` or `J` / `K` | Scroll the right-hand note text and comments down / up (hold to repeat) |
 | `E` | Toggle the full-screen lightbox |
-| `1` – `9` | Jump to the Nth image |
 | `L` | Like / unlike |
 | `S` | Collect (favorite) / un-collect |
 | `C` | Focus the comment box |
@@ -42,7 +41,6 @@ Only active on note detail pages; typing in an input is always left alone.
 | Mouse wheel | Previous / next image |
 | `j` / `k` | Pan down / up while zoomed |
 | `gg` / `Shift+G` | First image / last image |
-| `1` – `9` | Jump to the Nth image |
 | `Ctrl`/`⌘` + wheel or `+` / `−` | Zoom (up to 8×) |
 | `0` or ⤾ button | Reset zoom |
 | Drag | Pan while zoomed (works from anywhere, including the image itself) |
@@ -64,6 +62,11 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.13
+
+- Removed: number-key shortcuts for jumping to images on the note page and in the lightbox.
+- Fixed: Ctrl/⌘/Alt keyboard combinations now pass through while the lightbox is open, preserving browser shortcuts such as Ctrl/⌘+1–9.
 
 ### 0.4.12
 
