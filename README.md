@@ -22,7 +22,7 @@ Only active on note detail pages; typing in an input is always left alone.
 | Key | Action |
 |---|---|
 | `←` / `→` or `A` / `D` | Previous / next image |
-| `↓` / `↑` or `J` / `K` | Scroll the right-hand note text and comments down / up (hold to repeat) |
+| `↓` / `↑` or `J` / `K` | Scroll the note text and comments down / up in wide or stacked layouts (hold to repeat) |
 | `E` | Toggle the full-screen lightbox |
 | `L` | Like / unlike |
 | `S` | Collect (favorite) / un-collect |
@@ -62,6 +62,10 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.4.14
+
+- Fixed: `↓` / `↑` and `J` / `K` now scroll the note body and comments in narrow, stacked layouts as well as wide layouts. The scrollable container is resolved on each keypress, so resizing works without reloading.
 
 ### 0.4.13
 

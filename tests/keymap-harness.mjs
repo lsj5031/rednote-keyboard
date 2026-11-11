@@ -21,11 +21,19 @@ const likeButton = {
 };
 const notePanel = {
   scrollTop: 0,
+  scrollHeight: 3000,
+  clientHeight: 600,
+  overflowY: 'scroll',
+  parentElement: null,
   getClientRects: () => [{}],
   scrollBy({ top }) {
-    this.scrollTop += top;
+    if (this !== document.scrollingElement && !/^(auto|scroll|overlay)$/.test(this.overflowY)) return;
+    this.scrollTop = Math.max(0, Math.min(this.scrollHeight - this.clientHeight, this.scrollTop + top));
   },
 };
+const outerPanel = { ...notePanel, overflowY: 'hidden' };
+notePanel.parentElement = outerPanel;
+globalThis.getComputedStyle = (el) => ({ overflowY: el.overflowY || 'visible' });
 const selectors = {
   '.interact-container .like-wrapper': likeButton,
   '.note-container .note-scroller': notePanel,
@@ -124,7 +132,7 @@ globalThis.document = {
   },
   querySelectorAll(sel) {
     const one = this.querySelector(sel);
-    return one ? [one] : [];
+    return Array.isArray(one) ? one : one ? [one] : [];
   },
 };
 // toast() registers its element under an id — keep the map populated
@@ -217,6 +225,52 @@ let prevented = false;
 press('ArrowDown', { preventDefault() { prevented = true; } });
 check('missing panel leaves native scrolling available', !prevented);
 selectors['.note-container .note-scroller'] = notePanel;
+
+// Responsive layout: the text fills its height, and its ancestor scrolls.
+notePanel.scrollTop = 0;
+notePanel.clientHeight = notePanel.scrollHeight;
+notePanel.overflowY = 'visible';
+outerPanel.overflowY = 'scroll';
+press('j', { repeat: true });
+press('J');
+press('ArrowDown');
+check('stacked layout scrolls the ancestor through body and comments', outerPanel.scrollTop === 360 && notePanel.scrollTop === 0);
+press('k', { repeat: true });
+press('K');
+press('ArrowUp');
+check('stacked layout supports all upward scrolling keys', outerPanel.scrollTop === 0);
+outerPanel.scrollTop = outerPanel.scrollHeight - outerPanel.clientHeight;
+press('j');
+check('scrolling stops at the note bottom', outerPanel.scrollTop === 2400);
+outerPanel.scrollTop = 0;
+press('k');
+check('scrolling stops at the note top', outerPanel.scrollTop === 0);
+
+// Resize back without reloading; ignore an earlier hidden duplicate.
+notePanel.clientHeight = 600;
+notePanel.overflowY = 'auto';
+selectors['.note-container .note-scroller'] = [
+  { ...notePanel, getClientRects: () => [] }, notePanel,
+];
+press('j');
+check('resize back selects the visible inner panel without scrolling its ancestor', notePanel.scrollTop === 120 && outerPanel.scrollTop === 0);
+selectors['.note-container .note-scroller'] = notePanel;
+
+notePanel.overflowY = 'hidden';
+outerPanel.overflowY = 'hidden';
+prevented = false;
+press('ArrowDown', { preventDefault() { prevented = true; } });
+check('non-scrollable visible containers leave native keys available', !prevented && notePanel.scrollTop === 120);
+// The document can own scrolling in a full-page layout.
+outerPanel.overflowY = 'visible';
+document.scrollingElement = outerPanel;
+press('j');
+check('full-page layout can scroll the document element', outerPanel.scrollTop === 120);
+delete document.scrollingElement;
+outerPanel.scrollTop = 0;
+outerPanel.overflowY = 'hidden';
+notePanel.overflowY = 'scroll';
+notePanel.scrollTop = 240;
 
 press('e');
 check(

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.13
+// @version      0.4.14
 // @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, left/right for the image carousel, up/down or J/K to scroll note text, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -55,6 +55,22 @@
   const commentBox = () => document.querySelector('#content-textarea');
   // offsetParent is null for position:fixed elements, so check client rects
   const visible = (el) => !!el && el.getClientRects().length > 0;
+  // Narrow layouts expand the text panel and scroll an ancestor instead.
+  // Resolve on each keypress so resizing works without reloading the note.
+  const noteScrollTarget = () => {
+    for (const panel of document.querySelectorAll('.note-container .note-scroller')) {
+      if (!visible(panel)) continue;
+      for (let el = panel; el; el = el.parentElement) {
+        if (
+          el.clientHeight > 0 &&
+          el.scrollHeight > el.clientHeight &&
+          (/^(auto|scroll|overlay)$/.test(getComputedStyle(el).overflowY) ||
+            el === document.scrollingElement)
+        ) return el;
+      }
+    }
+    return null;
+  };
   const btnText = (b) => (b.textContent || '').trim();
   const followBtn = () =>
     Array.from(document.querySelectorAll('button.follow-button')).find(visible);
@@ -630,7 +646,7 @@
    * ------------------------------------------------------------------ */
   const SHORTCUTS = [
     ['← / →  or  A / D', '上一张 / 下一张图片'],
-    ['↓ / ↑  or  J / K', '向下 / 向上滚动右侧正文和评论（可长按）'],
+    ['↓ / ↑  or  J / K', '向下 / 向上滚动正文和评论（可长按）'],
     ['E', '放大图片（模态全屏查看）'],
     ['L', '点赞 / 取消点赞'],
     ['S', '收藏'],
@@ -896,9 +912,7 @@
         case 'k':
         case 'K': {
           if (helpVisible) break;
-          const panel = Array.from(
-            document.querySelectorAll('.note-container .note-scroller')
-          ).find(visible);
+          const panel = noteScrollTarget();
           if (!panel) break;
           handled();
           const down = ['ArrowDown', 'j', 'J'].includes(e.key);
