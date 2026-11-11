@@ -1,8 +1,8 @@
 # RedNote Keyboard Friendly (小红书键盘增强)
 
-Keyboard shortcuts for **rednote.com / xiaohongshu.com note detail pages** — each note opens in a full-screen lightbox by default, with arrow keys for the image carousel, one-key like/collect/comment, `/` for search, and `?` for help. Auto-dismisses nag modals.
+Keyboard shortcuts for **rednote.com / xiaohongshu.com**. Visible home-feed cards automatically show single-key badges for opening notes in background tabs. On note detail pages, each note opens in a full-screen lightbox by default, with image navigation, responsive text scrolling, one-key like/collect/comment, `/` for search, and `?` for help. Auto-dismisses note-page nag modals.
 
-Does nothing on the home feed, search, or profile pages — shortcuts are gated to note-detail URLs (`/explore/<id>`, `/discovery/item/<id>`, `/note/<id>`), so browsing the feed with your hands on the keyboard won't accidentally like anything.
+Home keys only navigate, never like, comment, or follow. Note actions remain gated to detail URLs (`/explore/<id>`, `/discovery/item/<id>`, `/note/<id>`). Search and profile pages have no shortcuts or badges.
 
 > *Unofficial userscript. Not affiliated with Xiaohongshu / RedNote.*
 
@@ -15,9 +15,21 @@ Does nothing on the home feed, search, or profile pages — shortcuts are gated 
 
 3. Open any note on xiaohongshu.com or rednote.com and press `?` to see the in-page help.
 
+Version 0.5.0 requests `GM_openInTab` (background tabs) and `unsafeWindow` (read the page's Swiper instance and full-quality image state). Accept the userscript manager's permission/update prompt if shown. These are userscript-manager APIs, not site permissions. There is no `window.open` fallback if the tab API is unavailable.
+
 ## Shortcuts
 
-Only active on note detail pages; typing in an input is always left alone.
+### Home feed
+
+On `/` (including rednote.com) and `/explore`, visible note cards automatically receive lowercase letter/digit badges in visual reading order. Press a displayed key **once** to immediately open its complete note URL, including signed query parameters, in a **new background tab**, keeping the feed in place. No activation mode, Enter, or key sequences. A brief green badge indicates an open without moving the other labels.
+
+Keys belong to the viewport, not the notes. Scrolling, resizing, layout changes and recycled cards invalidate stale assignments; badges return after the layout settles. Cards need an exposed badge-sized area, so offscreen, hidden or covered cards are skipped. Badges do not affect layout or intercept mouse clicks. `j`/`k`, arrows, `/`, `?` and other navigation keys remain untouched. There are 34 available single-character keys; later cards remain unlabelled when these run out.
+
+Typing, IME composition, modifier combinations (including Shift) and held/repeated keys are never used to open feed tabs.
+
+### Note detail
+
+The following shortcuts only apply on note detail pages; typing in an input is always left alone.
 
 | Key | Action |
 |---|---|
@@ -50,9 +62,24 @@ Held-down keys don't repeat except carousel arrows, note scrolling keys, and `h 
 
 Inside the lightbox, the mouse wheel flips to the previous/next image (scroll up = previous, scroll down = next) — hold `Ctrl` / `⌘` while scrolling to zoom instead.
 
-## Verified against the live site
+## Validation
 
-The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com note page (Swiper loop mode, Chinese UI):
+Run the dependency-free checks from the repository root:
+
+```sh
+node --check rednote-keyboard.user.js
+node tests/keymap-harness.mjs
+node tests/feed-harness.mjs
+git diff --check
+```
+
+The existing note harness covers responsive scrolling and lightbox/image regressions. It now models a sandbox DOM without `.swiper`, exposing the instance only through `unsafeWindow.document`. The feed harness exercises the real handler with a simulated DOM and `GM_openInTab`, including stale assignments, visibility, typing guards, exhaustion, SPA transitions and busy mutations.
+
+For a real-DOM smoke fixture, run `python3 -m http.server 8765 --bind 127.0.0.1` and open `http://127.0.0.1:8765/tests/feed-fixture.html`. The fixture reports its checks on screen. **It simulates GM and does not prove real extension background tabs or sandbox access.** Live managed-Chromium checks verified visible badges, correct URL and background-option dispatch through a simulated GM API, keyboard guards, immediate scroll invalidation and settled reassignment. Before/after scrolling screenshots were inspected. Actual Tampermonkey/Violentmonkey background-tab opening and sandbox access were not exercised; the real-DOM fixture also remains unverified in this environment. The note harness covers the page-world bridge, but real-manager Swiper navigation, auto-lightbox and full-quality image state remain verification limits for this release.
+
+### Earlier live note-page verification
+
+Before the 0.5.0 grant change, the DOM hooks and behavior were audited and exercised on a real xiaohongshu.com note page (Swiper loop mode, Chinese UI):
 
 - All selectors present: `.swiper`, `.like-wrapper`, `.collect-wrapper`, `.chat-wrapper`, `#content-textarea`, `input.search-input`, `.follow-button`
 - Slide count correct in loop mode (9 real slides detected from 11 raw Swiper slides)
@@ -62,6 +89,13 @@ The DOM hooks and behavior were audited and exercised on a real xiaohongshu.com 
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.5.0
+
+- Added: automatic visible home-feed single-letter/digit badges. One press opens the correct signed note link in a new background tab through `GM_openInTab(url, {active:false})`.
+- Added: viewport reassignment after settling, keypress identity/URL/geometry/exposure checks, repeat/typing/IME/modifier protection, and a brief opened indicator. No author links or site write actions on the feed.
+- Changed: manager grants now include `GM_openInTab` and `unsafeWindow`; note Swiper and image state are read through the supported page-world bridge. Existing note-detail shortcuts and responsive scrolling remain unchanged.
+- Added: dependency-free behavioral feed tests and a runnable real-DOM smoke fixture. Actual userscript-manager background-tab and sandbox behavior require live release verification.
 
 ### 0.4.14
 

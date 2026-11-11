@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.4.14
-// @description  Keyboard shortcuts for rednote.com / xiaohongshu.com NOTE DETAIL pages only: opens notes in a lightbox by default, left/right for the image carousel, up/down or J/K to scroll note text, L/S/C for like/collect/comment, / for search, ? for help. Auto-dismisses nag modals. Does nothing on the home feed / search / profile pages.
+// @version      0.5.0
+// @description  Automatic visible home-feed keys open notes in background tabs. Note-detail lightbox, image navigation, responsive text scrolling and keyboard actions.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
 // @updateURL    https://raw.githubusercontent.com/lsj5031/rednote-keyboard/main/rednote-keyboard.user.js
@@ -12,7 +12,8 @@
 // @match        https://rednote.com/*
 // @match        https://xiaohongshu.com/*
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_openInTab
+// @grant        unsafeWindow
 // @license      MIT
 // @noframes
 // ==/UserScript==
@@ -21,19 +22,25 @@
   'use strict';
 
   /* ------------------------------------------------------------------ *
-   * Page gating — shortcuts only apply on note detail pages
+   * Page gating — keep note actions separate from home navigation
    * (verified: the home feed has .like-wrapper cards but no .swiper,
    * so without this gate L would like the first feed card)
    * ------------------------------------------------------------------ */
-  const NOTE_DETAIL_RE = /\/(discovery\/item|explore|note)\//;
+  const NOTE_DETAIL_RE = /^\/(discovery\/item|explore|note)\/[^/]+\/?$/;
   const isNoteDetail = () => NOTE_DETAIL_RE.test(location.pathname);
+  const isHome = () => /^\/(?:explore\/?)?$/.test(location.pathname);
+  // Supported manager bridge: DOM expandos and state belong to the page world,
+  // not the granted userscript's isolated window. Never inject page scripts.
+  const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
   /* ------------------------------------------------------------------ *
    * DOM hooks (verified against the note-detail page DOM, Aug 2026)
    * ------------------------------------------------------------------ */
   const swiperEl = () => document.querySelector('.swiper.note-slider, .swiper');
   const swiper = () => {
-    const el = swiperEl();
+    const el = pageWindow.document
+      ? pageWindow.document.querySelector('.swiper.note-slider, .swiper')
+      : swiperEl();
     return el && el.swiper ? el.swiper : null;
   };
   // Comments carry their own .like-wrapper under each .comment-item, and they
@@ -122,6 +129,185 @@
       el.getAttribute('contenteditable') === 'true'
     );
   };
+
+  /* ------------------------------------------------------------------ *
+   * Home feed: disposable viewport assignments, never permanent note keys.
+   * Badges live in one fixed, pointer-transparent layer, outside the feed.
+   * ------------------------------------------------------------------ */
+  const FEED_KEYS = 'abcdefghilmnopqrstuvwxyz0123456789'; // reserve j/k
+  let feedLayer = null;
+  let feedEntries = [];
+  let feedSnapshot = null;
+  let feedTimer = null;
+  let feedRoute = location.href;
+  const feedObserved = new Set();
+  const feedResize = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => invalidateFeed()) : null;
+
+  function feedCards() {
+    if (!isHome() || document.hidden) return [];
+    const result = [];
+    for (const card of document.querySelectorAll('section.note-item')) {
+      const r = card.getBoundingClientRect();
+      const left = Math.max(0, r.left), top = Math.max(0, r.top);
+      const right = Math.min(window.innerWidth, r.right);
+      const bottom = Math.min(window.innerHeight, r.bottom);
+      if (right - left < 28 || bottom - top < 28) continue;
+      const anchor = card.querySelector('a.cover[href], a.title[href]');
+      if (!anchor || !card.isConnected) continue;
+      let url;
+      try {
+        url = new URL(anchor.getAttribute('href'), location.href);
+      } catch (_) { continue; }
+      if (url.origin !== location.origin || !NOTE_DETAIL_RE.test(url.pathname)) continue;
+      let hidden = false;
+      for (let el = card; el; el = el.parentElement) {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' ||
+            cs.visibility === 'collapse' || Number(cs.opacity) < 0.1) {
+          hidden = true;
+          break;
+        }
+      }
+      if (hidden) continue;
+      // Find a fully exposed 28px patch, including under a fixed header or
+      // in a clipped card. Hit testing also rejects overlays and CSS clipping.
+      let patch = null;
+      for (const y of [top + 4, (top + bottom - 28) / 2, bottom - 32]) {
+        for (const x of [left + 4, (left + right - 28) / 2, right - 32]) {
+          if (x < left || y < top || x + 28 > right || y + 28 > bottom) continue;
+          if ([[1, 1], [27, 1], [1, 27], [27, 27], [14, 14]].every(([dx, dy]) => {
+            const hit = document.elementFromPoint(x + dx, y + dy);
+            return hit && card.contains(hit);
+          })) {
+            patch = [x, y];
+            break;
+          }
+        }
+        if (patch) break;
+      }
+      if (patch) result.push({
+        card, anchor, url: url.href, rect: [r.left, r.top, r.right, r.bottom],
+        patch,
+      });
+    }
+    return result.sort((a, b) => a.rect[1] - b.rect[1] || a.rect[0] - b.rect[0]);
+  }
+
+  function sameFeed(a, b) {
+    return a && b && a.length === b.length && a.every((v, i) => {
+      const w = b[i];
+      return v.card === w.card && v.anchor === w.anchor && v.url === w.url &&
+        v.rect.every((n, j) => n === w.rect[j]) &&
+        v.patch.every((n, j) => n === w.patch[j]);
+    });
+  }
+
+  function clearFeed() {
+    feedSnapshot = null;
+    feedEntries = [];
+    if (feedLayer) feedLayer.replaceChildren();
+  }
+
+  function invalidateFeed() {
+    clearFeed();
+    clearTimeout(feedTimer);
+    for (const card of feedObserved) {
+      if (!isHome() || !card.isConnected) {
+        feedResize?.unobserve(card);
+        feedObserved.delete(card);
+      }
+    }
+    if (!isHome() || document.hidden) return;
+    feedTimer = setTimeout(() => {
+      const before = feedCards();
+      feedTimer = setTimeout(() => {
+        const after = feedCards();
+        if (!sameFeed(before, after)) {
+          invalidateFeed();
+          return;
+        }
+        if (!isHome() || document.hidden) return;
+        if (!feedLayer) {
+          feedLayer = document.createElement('div');
+          feedLayer.id = 'rnk-feed-keys';
+          feedLayer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646';
+          document.body.appendChild(feedLayer);
+        }
+        feedSnapshot = after;
+        feedEntries = after.slice(0, FEED_KEYS.length).map((entry, i) => {
+          const badge = document.createElement('span');
+          badge.textContent = FEED_KEYS[i];
+          badge.style.cssText = `position:absolute;left:${entry.patch[0]}px;top:${entry.patch[1]}px;` +
+            'box-sizing:border-box;width:28px;height:28px;text-align:center;line-height:26px;' +
+            'background:#202020;color:white;border:1px solid white;border-radius:5px;' +
+            'font:bold 16px/26px monospace;pointer-events:none;box-shadow:0 1px 4px #0008';
+          feedLayer.appendChild(badge);
+          return { ...entry, key: FEED_KEYS[i], badge };
+        });
+        after.forEach(({ card }) => {
+          if (!feedObserved.has(card)) {
+            feedObserved.add(card);
+            feedResize?.observe(card);
+          }
+        });
+        feedTimer = null;
+      }, 80);
+    }, 160);
+  }
+
+  function feedKeydown(e) {
+    if (!isHome() || e.defaultPrevented || e.repeat || e.isComposing || e.keyCode === 229 ||
+        e.ctrlKey || e.metaKey || e.altKey || e.shiftKey ||
+        isEditable(e.target) || isEditable(document.activeElement) ||
+        (e.composedPath && e.composedPath().some(isEditable))) return;
+    if (feedRoute !== location.href || !sameFeed(feedSnapshot, feedCards())) {
+      invalidateFeed();
+      return;
+    }
+    const entry = feedEntries.find(({ key }) => key === e.key);
+    if (!entry || typeof GM_openInTab !== 'function') return;
+    // No click(), focus tricks, or fallback window.open: the manager owns
+    // background-tab semantics and the full signed URL is passed unchanged.
+    try {
+      GM_openInTab(entry.url, { active: false });
+    } catch (_) { return; }
+    e.preventDefault();
+    e.stopPropagation();
+    entry.badge.style.background = '#237647';
+    setTimeout(() => { entry.badge.style.background = '#202020'; }, 450);
+  }
+
+  function ownFeedMutation(record) {
+    return feedLayer && (feedLayer.contains(record.target) ||
+      (record.type === 'childList' &&
+       [...record.addedNodes, ...record.removedNodes].length > 0 &&
+       [...record.addedNodes, ...record.removedNodes].every((n) => n === feedLayer)));
+  }
+  new MutationObserver((records) => {
+    if (records.every(ownFeedMutation)) return;
+    // Busy counters, video UI, and unrelated text updates must not starve
+    // hints. Mutation batches only invalidate an existing mapping if its
+    // identity/geometry/exposure changed. Pending settlement is not restarted.
+    if (feedSnapshot && sameFeed(feedSnapshot, feedCards())) return;
+    if (!feedSnapshot && feedTimer !== null) return;
+    invalidateFeed();
+  }).observe(document.body, {
+    childList: true, subtree: true, attributes: true, characterData: true,
+  });
+  window.addEventListener('scroll', invalidateFeed, true);
+  window.addEventListener('resize', invalidateFeed);
+  window.addEventListener('popstate', invalidateFeed);
+  window.addEventListener('hashchange', invalidateFeed);
+  document.addEventListener('visibilitychange', invalidateFeed);
+  // pushState emits no event; also catch CSS-only layout/occlusion changes.
+  // Keypress independently revalidates the entire mapping, even between polls.
+  setInterval(() => {
+    const changedRoute = feedRoute !== location.href;
+    feedRoute = location.href;
+    if (changedRoute || (feedSnapshot && !sameFeed(feedSnapshot, feedCards()))) invalidateFeed();
+  }, 250);
+  invalidateFeed();
 
   /* ------------------------------------------------------------------ *
    * Feedback helpers
@@ -247,7 +433,7 @@
   // this session, hence the lookup must match the note in the URL.
   function stateImage(i) {
     try {
-      const root = window.__INITIAL_STATE__;
+      const root = pageWindow.__INITIAL_STATE__;
       const map = root && root.note && root.note.noteDetailMap;
       const m = location.pathname.match(/\/(?:explore|discovery\/item|note)\/([^/?#]+)/);
       const id = m && m[1];
@@ -689,6 +875,7 @@
           .join('');
       box.innerHTML =
         '<div style="font-size:15px;font-weight:600;margin-bottom:12px">⌨️ 小红书键盘快捷键</div>' +
+        '<div style="margin-bottom:12px">首页：可见卡片自动显示单键，按一次在后台新标签页打开；滚动后重新分配。</div>' +
         '<table style="border-collapse:collapse">' + rows(SHORTCUTS) + '</table>' +
         '<div style="font-size:13px;font-weight:600;margin:14px 0 6px;color:#ddd">🖼️ 放大视图内</div>' +
         '<table style="border-collapse:collapse">' + rows(LIGHTBOX_SHORTCUTS) + '</table>' +
@@ -737,6 +924,10 @@
   document.addEventListener(
     'keydown',
     (e) => {
+      if (isHome()) {
+        feedKeydown(e);
+        return;
+      }
       if (!isNoteDetail()) return; // keybindings are note-detail-only
 
       // IME composition (pinyin etc.): never intercept while composing

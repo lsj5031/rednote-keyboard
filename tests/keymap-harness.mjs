@@ -126,7 +126,7 @@ globalThis.document = {
   getElementById: (id) => byId.get(id) || null,
   querySelector(sel) {
     if (sel === '.swiper.note-slider, .swiper')
-      return Object.assign(makeEl('div'), { swiper: fakeSwiper });
+      return makeEl('div'); // sandbox DOM wrapper has no page-world expando
     if (selectors[sel]) return selectors[sel];
     return null;
   },
@@ -142,6 +142,12 @@ globalThis.document.body.appendChild = function (c) {
   return origAppendChild.call(this, c);
 };
 globalThis.window = { addEventListener() {} };
+globalThis.unsafeWindow = {
+  document: {
+    querySelector: () => ({ swiper: fakeSwiper }),
+  },
+  get __INITIAL_STATE__() { return window.__INITIAL_STATE__; },
+};
 globalThis.location = { pathname: '/discovery/item/testid' };
 let mutationHandler = null;
 globalThis.MutationObserver = class {

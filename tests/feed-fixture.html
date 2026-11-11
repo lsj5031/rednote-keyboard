@@ -1,0 +1,98 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Feed keys browser smoke (simulated GM)</title>
+<style>
+  body { margin: 0; min-height: 2200px; font: 16px sans-serif; }
+  header { position: fixed; inset: 0 0 auto; height: 72px; background: #ddd; z-index: 10; }
+  .note-item { position: absolute; width: 120px; height: 130px; background: #eee; }
+  .cover { display: block; height: 95px; background: #cbd; }
+  #result { position: fixed; bottom: 0; background: white; z-index: 20; }
+</style>
+<header>Fixed header <input aria-label="Typing guard"></header>
+<main></main>
+<pre id="result">Running real-DOM smoke, GM is simulated…</pre>
+<script>
+  // Serve the repository: python3 -m http.server 8765 --bind 127.0.0.1
+  // Open http://127.0.0.1:8765/tests/feed-fixture.html
+  // This is NOT a userscript-manager test and never opens real tabs.
+  const calls = [];
+  window.GM_openInTab = (url, options) => calls.push({ url, options });
+  window.unsafeWindow = window;
+  for (let i = 0; i < 48; i++) {
+    const card = document.createElement('section');
+    card.className = 'note-item';
+    card.style.left = `${10 + (i % 6) * 140}px`;
+    card.style.top = `${20 + Math.floor(i / 6) * 160}px`;
+    card.innerHTML = `<a class="cover" href="/discovery/item/${i}?signed=keep%2Bme">Note ${i}</a>
+      <a class="title" href="/discovery/item/${i}?signed=keep%2Bme">Title</a>
+      <a href="/user/profile/${i}">Author</a>`;
+    document.querySelector('main').appendChild(card);
+  }
+  history.replaceState(null, '', '/');
+  const script = document.createElement('script');
+  script.src = '/rednote-keyboard.user.js';
+  script.onload = async () => {
+    const passed = [];
+    const check = (name, ok) => { if (!ok) throw Error(name); passed.push(name); };
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    const badges = () => [...document.querySelectorAll('#rnk-feed-keys span')];
+    const waitLabels = async () => {
+      for (let i = 0; i < 40 && !badges().length; i++) await delay(50);
+      check('labels settled', badges().length > 0);
+    };
+    const press = (key, options = {}) => {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options });
+      (options.target || document.body).dispatchEvent(e);
+      return e;
+    };
+    try {
+      await waitLabels();
+      const first = badges()[0], rect = first.getBoundingClientRect();
+      check('badge exposed below fixed header', rect.top >= 72);
+      check('badge does not intercept pointer', document.elementFromPoint(rect.x + 14, rect.y + 14).closest('.note-item'));
+      const before = scrollY;
+      press(first.textContent);
+      check('signed URL and inactive API option', calls.length === 1 &&
+        calls[0].url.endsWith('/discovery/item/0?signed=keep%2Bme') && calls[0].options.active === false);
+      check('feed scroll and labels retained', scrollY === before && badges()[0] === first);
+      await delay(550);
+      check('observer does not loop on badge changes', badges()[0] === first);
+      const input = document.querySelector('input');
+      input.focus(); press('a', { target: input }); input.blur();
+      for (const opts of [{ repeat: true }, { ctrlKey: true }, { isComposing: true }]) press('a', opts);
+      check('typing modifiers IME repeat protected', calls.length === 1);
+      const card = document.querySelector('.note-item');
+      card.style.left = '12px';
+      press('a');
+      check('synchronous stale geometry blocked', calls.length === 1 && badges().length === 0);
+      await waitLabels();
+      window.dispatchEvent(new Event('resize'));
+      check('resize clears immediately', badges().length === 0);
+      await waitLabels();
+      scrollTo(0, 200);
+      await delay(50);
+      check('scroll clears immediately', badges().length === 0);
+      await waitLabels();
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:30;background:#aaa';
+      document.body.appendChild(overlay);
+      await delay(500);
+      check('overlay occlusion removes all labels', badges().length === 0);
+      overlay.remove();
+      await waitLabels();
+      history.pushState(null, '', '/search_result');
+      press('a'); await delay(300);
+      check('SPA search has no labels or opens', badges().length === 0 && calls.length === 1);
+      history.pushState(null, '', '/explore');
+      await waitLabels();
+      history.back();
+      await delay(500);
+      check('browser back clears home labels', badges().length === 0);
+      window.smokeResult = { ok: true, passed };
+    } catch (e) {
+      window.smokeResult = { ok: false, passed, error: String(e) };
+    }
+    document.querySelector('#result').textContent = JSON.stringify(window.smokeResult, null, 2);
+  };
+  document.body.appendChild(script);
+</script>
