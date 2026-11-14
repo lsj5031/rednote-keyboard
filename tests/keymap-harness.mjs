@@ -26,7 +26,9 @@ const notePanel = {
   overflowY: 'scroll',
   parentElement: null,
   getClientRects: () => [{}],
-  scrollBy({ top }) {
+  scrollCalls: [],
+  scrollBy({ top, behavior }) {
+    this.scrollCalls.push({ top, behavior });
     if (this !== document.scrollingElement && !/^(auto|scroll|overlay)$/.test(this.overflowY)) return;
     this.scrollTop = Math.max(0, Math.min(this.scrollHeight - this.clientHeight, this.scrollTop + top));
   },
@@ -141,7 +143,11 @@ globalThis.document.body.appendChild = function (c) {
   if (c.id) byId.set(c.id, c);
   return origAppendChild.call(this, c);
 };
-globalThis.window = { addEventListener() {} };
+globalThis.window = {
+  innerHeight: 800,
+  matchMedia: () => ({ matches: false }),
+  addEventListener() {},
+};
 globalThis.unsafeWindow = {
   document: {
     querySelector: () => ({ swiper: fakeSwiper }),
@@ -199,7 +205,71 @@ check(
 );
 
 const imgsBeforeManualReopen = created.filter((el) => el.tagName === 'IMG').length;
+let blockedLightboxSpace = false;
+press(' ', { preventDefault() { blockedLightboxSpace = true; } });
+check('lightbox consumes Space without scrolling the note', blockedLightboxSpace && notePanel.scrollTop === 0);
 press('q');
+
+let spacePrevented = 0;
+const page = (opts = {}) => press(' ', {
+  preventDefault() { spacePrevented++; }, ...opts,
+});
+notePanel.scrollCalls.length = 0;
+const focusedButton = { nodeType: 1, tagName: 'BUTTON', getAttribute: () => null };
+document.activeElement = focusedButton;
+page({ target: focusedButton });
+for (let i = 0; i < 8; i++) page({ target: focusedButton, repeat: true });
+check('Space pages once from a focused action and consumes every held key',
+  notePanel.scrollTop === 600 && notePanel.scrollCalls.length === 1 && spacePrevented === 9);
+check('Space uses native smooth scrolling by the panel clientHeight',
+  notePanel.scrollCalls[0].top === 600 && notePanel.scrollCalls[0].behavior === 'smooth');
+page({ shiftKey: true });
+check('Shift+Space pages up', notePanel.scrollTop === 0);
+window.matchMedia = () => ({ matches: true });
+page();
+check('reduced motion uses instant scrolling', notePanel.scrollCalls.at(-1).behavior === 'instant');
+window.matchMedia = () => ({ matches: false });
+document.activeElement = document.body;
+const beforeGuards = spacePrevented;
+const editor = { nodeType: 1, tagName: 'SPAN', isContentEditable: true };
+for (const opts of [
+  { target: { nodeType: 1, tagName: 'INPUT' } },
+  { target: { nodeType: 1, tagName: 'TEXTAREA' } },
+  { target: editor }, { composedPath: () => [editor] },
+  { target: { closest: () => ({}) } },
+  { ctrlKey: true }, { metaKey: true }, { altKey: true },
+  { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true },
+]) page(opts);
+document.activeElement = editor;
+page();
+document.activeElement = document.body;
+check('Space preserves editors, editable paths, media/controls, modifiers, IME and prevented events',
+  spacePrevented === beforeGuards && notePanel.scrollTop === 600);
+press('?');
+page();
+check('help blocks Space without paging underneath', notePanel.scrollTop === 600 && spacePrevented === beforeGuards + 1);
+press('?');
+const dialog = { getClientRects: () => [{}], contains: () => false };
+selectors['dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'] = dialog;
+page();
+check('unrelated dialogs block background Space paging', notePanel.scrollTop === 600);
+delete selectors['dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'];
+notePanel.clientHeight = notePanel.scrollHeight;
+notePanel.overflowY = 'visible';
+outerPanel.overflowY = 'auto';
+page();
+check('Space resolves the stacked ancestor on each keypress', outerPanel.scrollTop === 600);
+outerPanel.scrollTop = 0;
+outerPanel.overflowY = 'visible';
+document.scrollingElement = outerPanel;
+page();
+check('document-owned note paging uses viewport, not document clientHeight', outerPanel.scrollTop === 800);
+delete document.scrollingElement;
+outerPanel.scrollTop = 0;
+outerPanel.overflowY = 'hidden';
+notePanel.clientHeight = 600;
+notePanel.overflowY = 'scroll';
+notePanel.scrollTop = 0;
 
 press('ArrowDown');
 press('j', { repeat: true });

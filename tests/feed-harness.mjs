@@ -36,9 +36,11 @@ function fixture(script = source) {
     remove() {}
   }
   const body = new Element('body');
+  const scrolls = [];
+  const scrollingElement = { scrollBy: (options) => scrolls.push(options) };
   const location = { pathname: '/', origin: 'https://www.rednote.com', href: 'https://www.rednote.com/' };
   const document = {
-    body, activeElement: body, hidden: false,
+    body, scrollingElement, activeElement: body, hidden: false,
     createElement: (tag) => new Element(tag),
     getElementById: (id) => body.children.find((e) => e.id === id),
     querySelector: () => null,
@@ -54,6 +56,7 @@ function fixture(script = source) {
   const context = {
     document, location, URL, console,
     window: { innerWidth: 1000, innerHeight: 800,
+      matchMedia: () => ({ matches: false }),
       addEventListener: document.addEventListener },
     getComputedStyle: (el) => ({
       display: el.hidden ? 'none' : 'block', opacity: el.opacity ?? '1', visibility: 'visible',
@@ -74,7 +77,7 @@ function fixture(script = source) {
   };
   vm.runInNewContext(script, context);
   const f = {
-    context, document, opened, events, observers,
+    context, document, opened, events, observers, scrolls,
     add(id, x, y, w = 150, h = 200, href = `/discovery/item/${id}?xsec_token=signed%2Bvalue&source=feed`) {
       const c = new Element('section');
       c.rect = { left: x, top: y, right: x + w, bottom: y + h };
@@ -125,6 +128,32 @@ test('visual order, full signed URL and background API; no label movement after 
   // Our own badge mutation must not clear/reassign keys.
   f.mutate(f.badges()[0]);
   assert.equal(f.badges().length, 3);
+});
+
+test('Space pages the feed viewport from focused actions, reverse, holds and guards', () => {
+  const f = fixture();
+  const button = { nodeType: 1, tagName: 'BUTTON', getAttribute: () => null };
+  f.document.activeElement = button;
+  assert.ok(f.press(' ', { target: button }).prevented);
+  for (let i = 0; i < 10; i++) assert.ok(f.press(' ', { target: button, repeat: true }).prevented);
+  assert.equal(JSON.stringify(f.scrolls), '[{"top":800,"behavior":"smooth"}]');
+  assert.ok(f.press(' ', { shiftKey: true }).prevented);
+  assert.equal(f.scrolls.at(-1).top, -800);
+  f.context.window.matchMedia = () => ({ matches: true });
+  f.press(' ');
+  assert.equal(f.scrolls.at(-1).behavior, 'instant');
+  f.document.activeElement = f.document.body;
+  const editor = { nodeType: 1, tagName: 'SPAN', isContentEditable: true };
+  for (const opts of [
+    { target: editor }, { composedPath: () => [editor] },
+    { target: { nodeType: 1, tagName: 'INPUT' } },
+    { ctrlKey: true }, { metaKey: true }, { altKey: true },
+    { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true },
+  ]) assert.equal(f.press(' ', opts).prevented, false);
+  f.route('/search_result');
+  assert.equal(f.press(' ').prevented, false);
+  assert.equal(f.scrolls.length, 3);
+  assert.equal(f.opened.length, 0);
 });
 
 test('typing, shadow editing, all modifiers, IME, repeats and reserved keys pass through', () => {

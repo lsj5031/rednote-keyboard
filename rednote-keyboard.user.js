@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.5.0
+// @version      0.5.1
 // @description  Automatic visible home-feed keys open notes in background tabs. Note-detail lightbox, image navigation, responsive text scrolling and keyboard actions.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -831,6 +831,7 @@
    * Help overlay
    * ------------------------------------------------------------------ */
   const SHORTCUTS = [
+    ['Space / Shift + Space', '向下 / 向上平滑翻页（首页和正文）'],
     ['← / →  or  A / D', '上一张 / 下一张图片'],
     ['↓ / ↑  or  J / K', '向下 / 向上滚动正文和评论（可长按）'],
     ['E', '放大图片（模态全屏查看）'],
@@ -924,6 +925,51 @@
   document.addEventListener(
     'keydown',
     (e) => {
+      // Own Space even on focused action buttons, including repeats: otherwise
+      // the browser may activate the button on keyup instead of paging.
+      if (e.key === ' ' && (isHome() || isNoteDetail())) {
+        if (e.defaultPrevented || e.isComposing || e.keyCode === 229 ||
+            e.ctrlKey || e.metaKey || e.altKey) return;
+        const path = e.composedPath ? e.composedPath() : [e.target];
+        const controls = [...path, document.activeElement];
+        if (controls.some((el) => isEditable(el) || el?.closest?.(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
+          '[role="textbox"], video, audio, [role="slider"]'
+        ))) return;
+
+        // A note may itself be presented as a dialog. Only unrelated dialogs
+        // block its text panel; never page the background behind an overlay.
+        const panels = isNoteDetail()
+          ? Array.from(document.querySelectorAll('.note-container .note-scroller')) : [];
+        const dialogs = Array.from(document.querySelectorAll(
+          'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+        )).filter((el) => visible(el) && getComputedStyle(el).visibility !== 'hidden' &&
+          !panels.some((panel) => el.contains(panel)));
+        if (lb || helpVisible || dialogs.length) {
+          // Keep native actions within unrelated dialogs, but not native
+          // page scrolling when focus is left on the underlying page.
+          if (!lb && !helpVisible && dialogs.some((dialog) =>
+            controls.some((el) => el?.closest?.('button') &&
+              dialog.contains(el)))) return;
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        const target = isHome() ? document.scrollingElement : noteScrollTarget();
+        e.preventDefault();
+        e.stopPropagation();
+        if (target && !e.repeat) {
+          const height = target === document.scrollingElement
+            ? window.innerHeight : target.clientHeight;
+          target.scrollBy({
+            top: (e.shiftKey ? -1 : 1) * height,
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+              ? 'instant' : 'smooth',
+          });
+        }
+        return;
+      }
       if (isHome()) {
         feedKeydown(e);
         return;

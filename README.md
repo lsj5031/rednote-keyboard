@@ -27,6 +27,10 @@ Keys belong to the viewport, not the notes. Scrolling, resizing, layout changes 
 
 Typing, IME composition, modifier combinations (including Shift) and held/repeated keys are never used to open feed tabs.
 
+| Key | Action |
+|---|---|
+| `Space` / `Shift+Space` | Smoothly page down / up by one viewport, even after clicking an action button |
+
 ### Note detail
 
 The following shortcuts only apply on note detail pages; typing in an input is always left alone.
@@ -35,6 +39,7 @@ The following shortcuts only apply on note detail pages; typing in an input is a
 |---|---|
 | `←` / `→` or `A` / `D` | Previous / next image |
 | `↓` / `↑` or `J` / `K` | Scroll the note text and comments down / up in wide or stacked layouts (hold to repeat) |
+| `Space` / `Shift+Space` | Smoothly page the note text and comments down / up by one visible panel height (viewport when the document scrolls) |
 | `E` | Toggle the full-screen lightbox |
 | `L` | Like / unlike |
 | `S` | Collect (favorite) / un-collect |
@@ -60,6 +65,8 @@ The following shortcuts only apply on note detail pages; typing in an input is a
 
 Held-down keys don't repeat except carousel arrows, note scrolling keys, and `h j k l` while the lightbox is open. IME composition is never intercepted, and modifier combos pass through to the browser.
 
+Space pages once per press, not once per repeat. It uses native browser smooth scrolling, or instant scrolling with reduced motion enabled. Editors, media controls and modifier combinations are left alone; help, the lightbox and unrelated dialogs never page the underlying feed or note.
+
 Inside the lightbox, the mouse wheel flips to the previous/next image (scroll up = previous, scroll down = next) — hold `Ctrl` / `⌘` while scrolling to zoom instead.
 
 ## Validation
@@ -75,6 +82,15 @@ git diff --check
 
 The existing note harness covers responsive scrolling and lightbox/image regressions. It now models a sandbox DOM without `.swiper`, exposing the instance only through `unsafeWindow.document`. The feed harness exercises the real handler with a simulated DOM and `GM_openInTab`, including stale assignments, visibility, typing guards, exhaustion, SPA transitions and busy mutations.
 
+Optional Chromium paging fixtures use existing local installations, without installing dependencies or contacting Rednote:
+
+```sh
+PLAYWRIGHT_CORE_PATH=/absolute/path/to/playwright-core/index.js \
+CHROMIUM_PATH=/absolute/path/to/chrome node tests/space-browser-harness.mjs
+```
+
+Ordered screenshots, a trace and measured scroll positions are written to `/tmp/rednote-space-evidence` (override with `EVIDENCE_DIR`). Real key presses exercise feed and wide/stacked/document-owned note paging, focused buttons, holds, reverse, typing, media, overlays and reduced motion. These are isolated `setContent` fixtures, not live Rednote or userscript-manager verification.
+
 For a real-DOM smoke fixture, run `python3 -m http.server 8765 --bind 127.0.0.1` and open `http://127.0.0.1:8765/tests/feed-fixture.html`. The fixture reports its checks on screen. **It simulates GM and does not prove real extension background tabs or sandbox access.** Live managed-Chromium checks verified visible badges, correct URL and background-option dispatch through a simulated GM API, keyboard guards, immediate scroll invalidation and settled reassignment. Before/after scrolling screenshots were inspected. Actual Tampermonkey/Violentmonkey background-tab opening and sandbox access were not exercised; the real-DOM fixture also remains unverified in this environment. The note harness covers the page-world bridge, but real-manager Swiper navigation, auto-lightbox and full-quality image state remain verification limits for this release.
 
 ### Earlier live note-page verification
@@ -89,6 +105,12 @@ Before the 0.5.0 grant change, the DOM hooks and behavior were audited and exerc
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.5.1
+
+- Added: smooth `Space` / `Shift+Space` paging on the feed and responsive note text panels, including when an action button retains focus.
+- Held Space is consumed without restarting the animation or activating the focused action. Reduced motion, typing, IME, media, modifier and overlay guards are respected.
+- Added: dependency-free paging regression coverage and an isolated Chromium fixture harness. Fixture checks do not validate a live Rednote page or userscript-manager integration.
 
 ### 0.5.0
 
