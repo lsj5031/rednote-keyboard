@@ -39,7 +39,7 @@ The following shortcuts only apply on note detail pages; typing in an input is a
 |---|---|
 | `←` / `→` or `A` / `D` | Previous / next image |
 | `↓` / `↑` or `J` / `K` | Scroll the note text and comments down / up in wide or stacked layouts (hold to repeat) |
-| `Space` / `Shift+Space` | Smoothly page the note text and comments down / up by one visible panel height (viewport when the document scrolls) |
+| `Space` / `Shift+Space` | Left untouched for the site's native handling, including video play/pause |
 | `E` | Toggle the full-screen lightbox |
 | `L` | Like / unlike |
 | `S` | Collect (favorite) / un-collect |
@@ -65,7 +65,7 @@ The following shortcuts only apply on note detail pages; typing in an input is a
 
 Held-down keys don't repeat except carousel arrows, note scrolling keys, and `h j k l` while the lightbox is open. IME composition is never intercepted, and modifier combos pass through to the browser.
 
-Space pages once per press, not once per repeat. It uses native browser smooth scrolling, or instant scrolling with reduced motion enabled. Editors, media controls and modifier combinations are left alone; help, the lightbox and unrelated dialogs never page the underlying feed or note.
+On the home feed only, Space pages once per press, not once per repeat. It uses native browser smooth scrolling, or instant scrolling with reduced motion enabled. Editors, media controls and modifier combinations are left alone; help, the lightbox and unrelated dialogs never page the underlying feed. On note pages, Space (including Shift and repeats) is never intercepted, even with help or the lightbox open, leaving the site's video handling intact.
 
 Inside the lightbox, the mouse wheel flips to the previous/next image (scroll up = previous, scroll down = next) — hold `Ctrl` / `⌘` while scrolling to zoom instead.
 
@@ -89,7 +89,7 @@ PLAYWRIGHT_CORE_PATH=/absolute/path/to/playwright-core/index.js \
 CHROMIUM_PATH=/absolute/path/to/chrome node tests/space-browser-harness.mjs
 ```
 
-Ordered screenshots, a trace and measured scroll positions are written to `/tmp/rednote-space-evidence` (override with `EVIDENCE_DIR`). Real key presses exercise feed and wide/stacked/document-owned note paging, focused buttons, holds, reverse, typing, media, overlays and reduced motion. These are isolated `setContent` fixtures, not live Rednote or userscript-manager verification.
+Ordered screenshots, a trace and measured scroll positions are written to `/tmp/rednote-space-evidence` (override with `EVIDENCE_DIR`). Real key presses exercise home smooth paging, focused buttons, holds, reverse, typing, media, overlays, reduced motion, note Space pass-through and an SPA home→note→home roundtrip. A site-like video play/pause listener is a simulation, not real site playback verification. These are isolated `setContent` fixtures, not live Rednote or userscript-manager verification.
 
 For a real-DOM smoke fixture, run `python3 -m http.server 8765 --bind 127.0.0.1` and open `http://127.0.0.1:8765/tests/feed-fixture.html`. The fixture reports its checks on screen. **It simulates GM and does not prove real extension background tabs or sandbox access.** Live managed-Chromium checks verified visible badges, correct URL and background-option dispatch through a simulated GM API, keyboard guards, immediate scroll invalidation and settled reassignment. Before/after scrolling screenshots were inspected. Actual Tampermonkey/Violentmonkey background-tab opening and sandbox access were not exercised; the real-DOM fixture also remains unverified in this environment. The note harness covers the page-world bridge, but real-manager Swiper navigation, auto-lightbox and full-quality image state remain verification limits for this release.
 
@@ -105,6 +105,10 @@ Before the 0.5.0 grant change, the DOM hooks and behavior were audited and exerc
 - Bilingual button matching: `Send`/`发送`, `Got it`/`知道了`/`我知道了`
 
 ## Changelog
+
+### 0.5.2
+
+- Fixed: smooth Space paging is home-only. Note pages leave Space, Shift+Space and repeats untouched so site video play/pause can work, including with help or the lightbox open.
 
 ### 0.5.1
 

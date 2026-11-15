@@ -205,71 +205,40 @@ check(
 );
 
 const imgsBeforeManualReopen = created.filter((el) => el.tagName === 'IMG').length;
-let blockedLightboxSpace = false;
-press(' ', { preventDefault() { blockedLightboxSpace = true; } });
-check('lightbox consumes Space without scrolling the note', blockedLightboxSpace && notePanel.scrollTop === 0);
+// Simulated downstream site listener: only receives uncancelled, propagated Space.
+const noteSpacePasses = () => {
+  let reached = 0;
+  let untouched = true;
+  const siteListener = (event) => { if (!event.defaultPrevented) reached++; };
+  const targets = [document.body,
+    { nodeType: 1, tagName: 'BUTTON', getAttribute: () => null },
+    { nodeType: 1, tagName: 'VIDEO', getAttribute: () => null },
+    { nodeType: 1, tagName: 'SPAN', isContentEditable: true }];
+  for (const route of ['/explore/testid', '/discovery/item/testid', '/note/testid/']) {
+    location.pathname = route;
+    for (const target of targets) {
+      document.activeElement = target;
+      for (const opts of [{}, { repeat: true }, { shiftKey: true }, { shiftKey: true, repeat: true }]) {
+        const event = { target, defaultPrevented: false, stopped: false,
+          preventDefault() { event.defaultPrevented = true; },
+          stopPropagation() { event.stopped = true; }, ...opts };
+        press(' ', event);
+        untouched &&= !event.defaultPrevented && !event.stopped;
+        if (!event.stopped) siteListener(event);
+      }
+    }
+  }
+  document.activeElement = document.body;
+  return untouched && reached === 48 && notePanel.scrollCalls.length === 0 &&
+    outerPanel.scrollCalls.length === 0;
+};
+check('note Space reaches the site uncancelled with the lightbox open', noteSpacePasses());
 press('q');
-
-let spacePrevented = 0;
-const page = (opts = {}) => press(' ', {
-  preventDefault() { spacePrevented++; }, ...opts,
-});
-notePanel.scrollCalls.length = 0;
-const focusedButton = { nodeType: 1, tagName: 'BUTTON', getAttribute: () => null };
-document.activeElement = focusedButton;
-page({ target: focusedButton });
-for (let i = 0; i < 8; i++) page({ target: focusedButton, repeat: true });
-check('Space pages once from a focused action and consumes every held key',
-  notePanel.scrollTop === 600 && notePanel.scrollCalls.length === 1 && spacePrevented === 9);
-check('Space uses native smooth scrolling by the panel clientHeight',
-  notePanel.scrollCalls[0].top === 600 && notePanel.scrollCalls[0].behavior === 'smooth');
-page({ shiftKey: true });
-check('Shift+Space pages up', notePanel.scrollTop === 0);
-window.matchMedia = () => ({ matches: true });
-page();
-check('reduced motion uses instant scrolling', notePanel.scrollCalls.at(-1).behavior === 'instant');
-window.matchMedia = () => ({ matches: false });
-document.activeElement = document.body;
-const beforeGuards = spacePrevented;
-const editor = { nodeType: 1, tagName: 'SPAN', isContentEditable: true };
-for (const opts of [
-  { target: { nodeType: 1, tagName: 'INPUT' } },
-  { target: { nodeType: 1, tagName: 'TEXTAREA' } },
-  { target: editor }, { composedPath: () => [editor] },
-  { target: { closest: () => ({}) } },
-  { ctrlKey: true }, { metaKey: true }, { altKey: true },
-  { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true },
-]) page(opts);
-document.activeElement = editor;
-page();
-document.activeElement = document.body;
-check('Space preserves editors, editable paths, media/controls, modifiers, IME and prevented events',
-  spacePrevented === beforeGuards && notePanel.scrollTop === 600);
+check('note Space reaches the site uncancelled for body/actions/media/editors', noteSpacePasses());
 press('?');
-page();
-check('help blocks Space without paging underneath', notePanel.scrollTop === 600 && spacePrevented === beforeGuards + 1);
+check('note Space reaches the site uncancelled with help open', noteSpacePasses());
 press('?');
-const dialog = { getClientRects: () => [{}], contains: () => false };
-selectors['dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'] = dialog;
-page();
-check('unrelated dialogs block background Space paging', notePanel.scrollTop === 600);
-delete selectors['dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'];
-notePanel.clientHeight = notePanel.scrollHeight;
-notePanel.overflowY = 'visible';
-outerPanel.overflowY = 'auto';
-page();
-check('Space resolves the stacked ancestor on each keypress', outerPanel.scrollTop === 600);
-outerPanel.scrollTop = 0;
-outerPanel.overflowY = 'visible';
-document.scrollingElement = outerPanel;
-page();
-check('document-owned note paging uses viewport, not document clientHeight', outerPanel.scrollTop === 800);
-delete document.scrollingElement;
-outerPanel.scrollTop = 0;
-outerPanel.overflowY = 'hidden';
-notePanel.clientHeight = 600;
-notePanel.overflowY = 'scroll';
-notePanel.scrollTop = 0;
+location.pathname = '/discovery/item/testid';
 
 press('ArrowDown');
 press('j', { repeat: true });

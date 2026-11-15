@@ -86,8 +86,6 @@ async function paging(name, height) {
   assert.equal(final.top, height, `${name}: exactly one visible page`);
   assert.equal(final.clicks, clicks, `${name}: no second action activation on keyup`);
   assert.ok(samples.some(({ top }) => top > 0 && top < height), `${name}: intermediate smooth positions`);
-  if (name === 'note-wide' || name === 'note-stacked')
-    assert.equal(final.background, 0, `${name}: background does not move`);
   await screenshot(`${name}-after`);
   await page.keyboard.press('Shift+Space');
   await page.waitForFunction(() => window.target.scrollTop === 0);
@@ -101,26 +99,63 @@ async function paging(name, height) {
 try {
   await fixture('feed');
   await paging('feed', 800);
-  await fixture('note');
-  await paging('note-wide', 450);
-  await page.setViewportSize({ width: 640, height: 800 });
-  await page.evaluate(() => { window.target = document.querySelector('.note-container'); });
-  await paging('note-stacked', 530);
-  // Same loaded script, resized back to a document-owned note layout.
-  await page.setViewportSize({ width: 1000, height: 800 });
-  await page.addStyleTag({ content: '.note-container{position:static;width:500px}.note-scroller{height:auto;overflow:visible}' });
-  await page.evaluate(() => { window.target = document.scrollingElement; });
-  await paging('note-document', 800);
+  // Same script and DOM throughout the SPA roundtrip. This downstream site-like
+  // video toggle is a simulation, not proof of Rednote's actual media handling.
+  await page.evaluate(() => {
+    document.activeElement.blur();
+    window.scriptScrolls = 0;
+    const scrollBy = Element.prototype.scrollBy;
+    Element.prototype.scrollBy = function (...args) {
+      window.scriptScrolls++;
+      return scrollBy.apply(this, args);
+    };
+    window.siteSpace = [];
+    window.simulatedPlaying = false;
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== ' ' || /^\/(?:explore\/?)?$/.test(location.pathname)) return;
+      window.siteSpace.push({ prevented: event.defaultPrevented, repeat: event.repeat, shift: event.shiftKey });
+      if (!event.defaultPrevented && !event.repeat) window.simulatedPlaying = !window.simulatedPlaying;
+      event.preventDefault(); // Simulated site owns Space, not native document paging.
+    });
+  });
+  for (const route of ['/explore/fixture', '/discovery/item/fixture', '/note/fixture']) {
+    await page.evaluate((route) => history.pushState({}, '', route), route);
+    const before = await position();
+    await page.keyboard.down('Space');
+    await page.keyboard.down('Space');
+    await page.keyboard.up('Space');
+    await page.keyboard.press('Shift+Space');
+    await page.waitForTimeout(100);
+    assert.deepEqual(await position(), before, `${route}: no scroll on note`);
+  }
+  const simulated = await page.evaluate(() => ({
+    events: window.siteSpace, scriptScrolls: window.scriptScrolls, playing: window.simulatedPlaying,
+  }));
+  assert.equal(simulated.events.length, 9);
+  assert.ok(simulated.events.every((event) => !event.prevented));
+  assert.equal(simulated.events.filter((event) => event.repeat).length, 3);
+  assert.equal(simulated.events.filter((event) => event.shift).length, 3);
+  assert.equal(simulated.scriptScrolls, 0);
+  assert.equal(simulated.playing, false, 'simulated video toggles twice per note route');
+  measurements.push({ name: 'note-site-listener-simulation', ...simulated });
+  await screenshot('note-space-pass-through');
+  await page.evaluate(() => history.pushState({}, '', '/explore'));
+  await paging('feed-after-spa-roundtrip', 800);
 
+  // Home overlay/media guards still prevent unintended feed paging.
   await fixture('note');
   await page.locator('#action').click();
   await page.keyboard.press('?');
+  await page.evaluate(() => history.pushState({}, '', '/'));
   await page.keyboard.press('Space');
   await page.waitForTimeout(500);
   assert.equal((await position()).top, 0);
   assert.equal((await position()).background, 0);
+  await page.evaluate(() => history.pushState({}, '', '/explore/fixture'));
   await page.keyboard.press('Escape');
   await page.evaluate(() => {
+    history.pushState({}, '', '/');
+    document.querySelector('.note-container').removeAttribute('role');
     const dialog = document.createElement('dialog');
     dialog.innerHTML = '<button onclick="window.dialogClicks=(window.dialogClicks||0)+1">Dialog action</button>';
     document.body.append(dialog);
@@ -161,7 +196,7 @@ try {
   assert.equal(reduced.top, 800);
   assert.equal(reduced.clicks, 1);
   measurements.push({ name: 'reduced-motion', final: reduced });
-  console.log('PASS Chromium fixtures: feed, wide/stacked/document note, hold, focused action, reverse, typing, overlays, media, reduced motion');
+  console.log('PASS Chromium fixtures: home smooth paging, hold, focused action, reverse, typing, overlays, media, reduced motion; note Space pass-through with simulated site video listener; SPA roundtrip');
 } finally {
   await writeFile(path.join(evidence, 'measurements.json'), JSON.stringify(measurements, null, 2));
   await context.tracing.stop({ path: path.join(evidence, 'trace.zip') });

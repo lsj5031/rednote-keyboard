@@ -147,6 +147,7 @@ test('Space pages the feed viewport from focused actions, reverse, holds and gua
   for (const opts of [
     { target: editor }, { composedPath: () => [editor] },
     { target: { nodeType: 1, tagName: 'INPUT' } },
+    { target: { closest: () => ({}) } }, // Media/control ancestor.
     { ctrlKey: true }, { metaKey: true }, { altKey: true },
     { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true },
   ]) assert.equal(f.press(' ', opts).prevented, false);
@@ -154,6 +155,27 @@ test('Space pages the feed viewport from focused actions, reverse, holds and gua
   assert.equal(f.press(' ').prevented, false);
   assert.equal(f.scrolls.length, 3);
   assert.equal(f.opened.length, 0);
+});
+
+test('Space routing stays dynamic across home → note routes → home', () => {
+  const f = fixture();
+  let siteEvents = 0;
+  f.events.keydown.push((event) => {
+    if (event.key === ' ' && !event.stopped) {
+      assert.equal(event.prevented, false);
+      siteEvents++;
+    }
+  });
+  f.press(' ');
+  for (const route of ['/explore/id', '/discovery/item/id', '/note/id']) {
+    f.route(route);
+    for (const opts of [{}, { repeat: true }, { shiftKey: true }]) f.press(' ', opts);
+  }
+  assert.equal(siteEvents, 9);
+  assert.equal(f.scrolls.length, 1);
+  f.route('/explore');
+  assert.ok(f.press(' ').prevented);
+  assert.equal(f.scrolls.length, 2);
 });
 
 test('typing, shadow editing, all modifiers, IME, repeats and reserved keys pass through', () => {

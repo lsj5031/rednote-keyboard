@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RedNote Keyboard Friendly (小红书键盘增强)
 // @namespace    https://github.com/lsj5031/rednote-keyboard
-// @version      0.5.1
+// @version      0.5.2
 // @description  Automatic visible home-feed keys open notes in background tabs. Note-detail lightbox, image navigation, responsive text scrolling and keyboard actions.
 // @author       lsj5031
 // @homepageURL  https://github.com/lsj5031/rednote-keyboard
@@ -831,7 +831,7 @@
    * Help overlay
    * ------------------------------------------------------------------ */
   const SHORTCUTS = [
-    ['Space / Shift + Space', '向下 / 向上平滑翻页（首页和正文）'],
+    ['Space / Shift + Space', '仅首页：向下 / 向上平滑翻页；笔记页保留网站视频播放 / 暂停'],
     ['← / →  or  A / D', '上一张 / 下一张图片'],
     ['↓ / ↑  or  J / K', '向下 / 向上滚动正文和评论（可长按）'],
     ['E', '放大图片（模态全屏查看）'],
@@ -880,7 +880,7 @@
         '<table style="border-collapse:collapse">' + rows(SHORTCUTS) + '</table>' +
         '<div style="font-size:13px;font-weight:600;margin:14px 0 6px;color:#ddd">🖼️ 放大视图内</div>' +
         '<table style="border-collapse:collapse">' + rows(LIGHTBOX_SHORTCUTS) + '</table>' +
-        '<div style="margin-top:10px;color:#888;font-size:12px">Esc 或 ? 关闭 · 仅笔记详情页生效</div>';
+        '<div style="margin-top:10px;color:#888;font-size:12px">Esc 或 ? 关闭 · 除首页快捷键外，仅笔记详情页生效</div>';
       document.body.appendChild(box);
     }
     helpVisible = !helpVisible;
@@ -927,7 +927,7 @@
     (e) => {
       // Own Space even on focused action buttons, including repeats: otherwise
       // the browser may activate the button on keyup instead of paging.
-      if (e.key === ' ' && (isHome() || isNoteDetail())) {
+      if (e.key === ' ' && isHome()) {
         if (e.defaultPrevented || e.isComposing || e.keyCode === 229 ||
             e.ctrlKey || e.metaKey || e.altKey) return;
         const path = e.composedPath ? e.composedPath() : [e.target];
@@ -937,14 +937,10 @@
           '[role="textbox"], video, audio, [role="slider"]'
         ))) return;
 
-        // A note may itself be presented as a dialog. Only unrelated dialogs
-        // block its text panel; never page the background behind an overlay.
-        const panels = isNoteDetail()
-          ? Array.from(document.querySelectorAll('.note-container .note-scroller')) : [];
+        // Never page the background feed behind an overlay.
         const dialogs = Array.from(document.querySelectorAll(
           'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
-        )).filter((el) => visible(el) && getComputedStyle(el).visibility !== 'hidden' &&
-          !panels.some((panel) => el.contains(panel)));
+        )).filter((el) => visible(el) && getComputedStyle(el).visibility !== 'hidden');
         if (lb || helpVisible || dialogs.length) {
           // Keep native actions within unrelated dialogs, but not native
           // page scrolling when focus is left on the underlying page.
@@ -956,14 +952,12 @@
           return;
         }
 
-        const target = isHome() ? document.scrollingElement : noteScrollTarget();
+        const target = document.scrollingElement;
         e.preventDefault();
         e.stopPropagation();
         if (target && !e.repeat) {
-          const height = target === document.scrollingElement
-            ? window.innerHeight : target.clientHeight;
           target.scrollBy({
-            top: (e.shiftKey ? -1 : 1) * height,
+            top: (e.shiftKey ? -1 : 1) * window.innerHeight,
             behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
               ? 'instant' : 'smooth',
           });
